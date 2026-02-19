@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ratonet - Transamazônica 2026</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Michroma&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ratonet: {
+                            primary: '#ff6600',
+                            dark: '#0a0a0a',
+                            panel: '#111111',
+                            border: '#222222',
+                            textMuted: '#888888'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Michroma', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background-color: #000; color: #fff; height: 100%; width: 100%; }
+        #map { position: absolute; inset: 0; z-index: 0; background: #0a0a0a; height: 100vh; width: 100vw; }
+        
+        /* Overrides para os painéis ficarem acima do mapa */
+        .ui-layer { position: absolute; z-index: 1000; pointer-events: none; }
+        .ui-interactive { pointer-events: auto; }
+
+        /* Estilização Customizada da Barra de Rolagem */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        /* Esconder os controles padrão do Leaflet */
+        .leaflet-control-zoom { display: none !important; }
+        .leaflet-control-attribution { display: none !important; }
+
+        /* Marcadores Customizados do Mapa */
+        .streamer-marker {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 60px;
+            margin-left: -30px; /* Centralizar no ponto */
+            margin-top: -30px;
+            filter: drop-shadow(0px 4px 10px rgba(0,0,0,0.5));
+        }
+        
+        /* Correção do overflow do avatar */
+        .streamer-avatar-wrapper {
+            position: relative;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background-color: var(--marker-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .streamer-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #111;
+            background-color: #222;
+            box-sizing: border-box; /* Impede que a borda vaze do círculo */
+        }
+
+        .streamer-status-dot {
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            background-color: #ef4444; /* red-500 */
+            border: 2px solid #111;
+            border-radius: 50%;
+            z-index: 10;
+        }
+
+        .streamer-name-tag {
+            margin-top: 4px;
+            background-color: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 12px;
+            backdrop-filter: blur(4px);
+            white-space: nowrap;
+        }
+
+        /* Ícones Sociais Menores */
+        .social-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.1);
+            color: #aaa;
+            font-size: 10px;
+            transition: all 0.2s;
+        }
+        .social-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+    </style>
+</head>
+<body class="font-sans antialiased text-white selection:bg-ratonet-primary selection:text-white">
+
+    <!-- Container do Mapa -->
+    <div id="map"></div>
+
+    <!-- Banner de Modo Demo/Mock -->
+    <div class="ui-layer top-6 left-1/2 -translate-x-1/2 w-max max-w-[90vw]">
+        <div class="bg-yellow-500/10 backdrop-blur-md border border-yellow-500/30 text-yellow-400 px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 shadow-lg">
+            <i class="fa-solid fa-flask text-sm"></i>
+            <span class="text-center">Modo Demo: Dados mockados. O código funcional e os dados reais serão inseridos em breve!</span>
+        </div>
+    </div>
+
+    <!-- Interface (Esquerda) -->
+    <div class="ui-layer top-0 left-0 p-6 flex flex-col gap-4 w-full md:w-auto">
+        
+        <!-- Navegação / Pílulas -->
+        <div class="ui-interactive flex items-center bg-black/60 backdrop-blur-md border border-white/10 rounded-full p-1.5 shadow-lg w-max max-w-full overflow-x-auto">
+            <button class="flex items-center gap-2 bg-white/10 text-ratonet-primary px-4 py-2 rounded-full font-medium text-sm transition-colors whitespace-nowrap">
+                <i class="fa-solid fa-map"></i> Mapa
+            </button>
+            <button onclick="showDemoToast('eyeRat')" class="flex items-center gap-2 text-white/70 hover:text-white px-4 py-2 rounded-full font-medium text-sm transition-colors whitespace-nowrap">
+                <i class="fa-solid fa-tv"></i> eyeRat
+            </button>
+            <button onclick="showDemoToast('Split')" class="flex items-center gap-2 text-white/70 hover:text-white px-4 py-2 rounded-full font-medium text-sm transition-colors whitespace-nowrap">
+                <i class="fa-solid fa-bolt"></i> Split
+            </button>
+        </div>
+
+        <!-- Card de Informações da Expedição -->
+        <div class="ui-interactive bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 rounded-2xl p-4 shadow-xl w-72 mt-2 hidden sm:block">
+            <h1 class="font-display text-ratonet-primary text-sm uppercase tracking-wider mb-1">Transamazônica 2026</h1>
+            <div class="flex items-center gap-2 text-xs text-ratonet-textMuted mb-3">
+                <span>6.250 km</span>
+                <span>&bull;</span>
+                <span>Dia 10</span>
+            </div>
+            <div class="flex items-center text-sm font-medium">
+                <span class="text-white/70 mr-1">Assistindo:</span> 
+                <span class="text-ratonet-primary">15</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Interface (Direita - Sidebar) -->
+    <div class="ui-layer top-0 right-0 h-full w-[340px] flex flex-col ui-interactive hidden md:flex">
+        <div class="flex-1 bg-ratonet-panel/95 backdrop-blur-xl border-l border-ratonet-border flex flex-col shadow-2xl pt-4">
+            
+            <!-- Cabeçalho Sidebar -->
+            <div class="p-6 pb-4 border-b border-white/5">
+                <h2 class="font-display text-ratonet-primary text-lg uppercase tracking-wide">Transamazônica 2026</h2>
+                <p class="text-xs text-ratonet-textMuted mt-1">6 transmitindo &bull; 6 ao vivo</p>
+            </div>
+
+            <!-- Lista de Streamers -->
+            <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-1" id="streamer-list">
+                <!-- Injetado via JS -->
+            </div>
+
+            <!-- Rodapé da Sidebar -->
+            <div class="p-4 flex flex-col items-end gap-4 mt-auto">
+                <!-- Botão Fila -->
+                <button class="flex items-center gap-2 bg-[#1a1a1a] border border-white/10 hover:border-ratonet-primary/50 text-xs font-medium px-4 py-2 rounded-full transition-all shadow-lg text-white">
+                    <span>🔥 22.630 na fila</span>
+                    <span class="text-ratonet-primary font-bold">#19688</span>
+                </button>
+
+                <!-- Footer Ratonet Solicitado -->
+                <div class="w-full pt-4 border-t border-white/5 text-center">
+                    <a href="https://ratonet.com.br" target="_blank" rel="noopener noreferrer" class="text-white/30 text-[10px] uppercase tracking-widest hover:text-ratonet-primary transition-colors">
+                        Powered by <span class="font-display">RATONET</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Controles de Zoom Customizados (Bottom Right do Mapa) -->
+    <div class="ui-layer bottom-6 right-6 md:right-[360px] flex flex-col gap-2 ui-interactive">
+        <button id="zoom-in" class="w-10 h-10 bg-ratonet-panel/90 hover:bg-[#222] border border-white/10 rounded-lg flex items-center justify-center text-white transition-colors shadow-lg">
+            <i class="fa-solid fa-plus"></i>
+        </button>
+        <button id="zoom-out" class="w-10 h-10 bg-ratonet-panel/90 hover:bg-[#222] border border-white/10 rounded-lg flex items-center justify-center text-white transition-colors shadow-lg">
+            <i class="fa-solid fa-minus"></i>
+        </button>
+    </div>
+
+    <!-- Container de Toasts/Notificações -->
+    <div id="toast-container" class="ui-layer bottom-10 left-1/2 -translate-x-1/2 flex flex-col gap-2 items-center z-[2000]"></div>
+
+    <!-- Scripts Leaflet e Lógica -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script>
+        // Sistema simples de Notificações (Toast) para o Modo Demo
+        function showDemoToast(featureName) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            toast.className = 'bg-[#111] border border-ratonet-primary text-white px-4 py-3 rounded-xl text-sm font-medium shadow-2xl backdrop-blur-md transform transition-all duration-300 translate-y-4 opacity-0 flex items-center gap-3';
+            toast.innerHTML = `
+                <div class="bg-ratonet-primary/20 p-2 rounded-lg text-ratonet-primary"><i class="fa-solid fa-person-digging"></i></div>
+                <div>A aba <span class="text-ratonet-primary font-bold">${featureName}</span> está em modo demo.<br><span class="text-xs text-white/60 font-normal">Integração funcional em breve!</span></div>
+            `;
+            
+            container.appendChild(toast);
+            
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-4', 'opacity-0');
+                toast.classList.add('translate-y-0', 'opacity-100');
+            });
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-4', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        // Dados da Transmissão (Agora em 0km/h e posicionados nas redondezas de Manaus)
+        const streamers = [
+            { id: 1, name: "Ricardo ACF", speed: "0 km/h", isCrown: true, color: "#f97316", latLng: [-3.15, -59.95], avatar: "https://helios.ratonet.com.br/api/v1/users/cml9nyu730002l1rgtvkt8j3i/avatar", socials: [] },
+            { id: 2, name: "Douglas Mesquita", speed: "0 km/h", color: "#ec4899", latLng: [-3.20, -59.90], avatar: "https://helios.ratonet.com.br/api/v1/users/cml15dn9n000011u4n2d28d9w/avatar", socials: ['fa-instagram', 'fa-tiktok', 'fa-twitter', 'fa-youtube'] },
+            { id: 3, name: "Guilherme Tonimek", speed: "0 km/h", color: "#3b82f6", latLng: [-3.25, -60.05], avatar: "https://helios.ratonet.com.br/api/v1/users/cmlhvr4by00w7hchbnauo56w9/avatar", socials: [] },
+            { id: 4, name: "Willian Gordox", speed: "0 km/h", color: "#a855f7", latLng: [-3.30, -59.85], avatar: "https://helios.ratonet.com.br/api/v1/users/cmljanpob008010dxlpec5h0g/avatar", socials: [] },
+            { id: 5, name: "Richard Rasmussen", speed: "0 km/h", color: "#10b981", latLng: [-3.35, -60.15], avatar: "https://helios.ratonet.com.br/api/v1/users/cmlgm0t5y00k5r75t0x47q6w6/avatar", socials: [] },
+            { id: 6, name: "Julio Balestrin", speed: "0 km/h", color: "#ef4444", latLng: [-3.40, -59.80], avatar: "https://helios.ratonet.com.br/api/v1/users/cmlrtqxlx2fwsec7havmx7v6d/avatar", socials: [] }
+        ];
+
+        // Inicializar Mapa
+        const map = L.map('map', {
+            zoomControl: false,
+            attributionControl: false
+        }).setView([-13.0, -52.0], 5); // Foca de forma abrangente no Brasil no load
+
+        // Layer de Mapa Escuro CartoDB
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19,
+        }).addTo(map);
+
+        // Controles de zoom customizados
+        document.getElementById('zoom-in').addEventListener('click', () => map.zoomIn());
+        document.getElementById('zoom-out').addEventListener('click', () => map.zoomOut());
+
+        // Waypoints principais simulando a rota SP -> PB -> PA -> AM (Pelas BRs)
+        const routeWaypoints = [
+            [-23.5505, -46.6333], // São Paulo, SP
+            [-19.9208, -43.9378], // Belo Horizonte, MG (BR-381)
+            [-14.8661, -40.8394], // Vitória da Conquista, BA (BR-116)
+            [-12.2660, -38.9667], // Feira de Santana, BA (BR-116)
+            [-7.2307, -35.8811],  // Campina Grande, PB (BR-230) - Chegada na Paraíba
+            [-7.0197, -37.2805],  // Patos, PB (BR-230)
+            [-7.0772, -41.4661],  // Picos, PI
+            [-5.5185, -47.4777],  // Imperatriz, MA (BR-010)
+            [-5.3686, -49.0964],  // Marabá, PA (Início real da Transamazônica no Pará)
+            [-3.2033, -52.2064],  // Altamira, PA (BR-230)
+            [-4.2761, -55.9836],  // Itaituba, PA (BR-230)
+            [-6.2200, -57.7500],  // Jacareacanga, PA
+            [-3.8100, -59.8200]   // Careiro, AM (Chegando em Manaus)
+        ];
+
+        // Função para gerar um trajeto seguindo os waypoints
+        function generateFakePath(endPoint, index) {
+            const path = [];
+            const offset = index * 0.04; // Espaçamento para não sobrepor as 6 linhas
+            
+            // Interpola os pontos base para criar uma linha que simula a rodovia
+            for (let i = 0; i < routeWaypoints.length - 1; i++) {
+                const start = routeWaypoints[i];
+                const end = routeWaypoints[i+1];
+                
+                const segments = 15; // Quebra cada trecho em partes para fazer curvas
+                for (let j = 0; j < segments; j++) {
+                    const fraction = j / segments;
+                    let lat = start[0] + (end[0] - start[0]) * fraction;
+                    let lng = start[1] + (end[1] - start[1]) * fraction;
+                    
+                    // Adiciona um ruído para simular as curvas e irregularidades das rodovias reais
+                    const noise = Math.sin(fraction * Math.PI) * 0.2; 
+                    lat += noise + (Math.random() * 0.06 - 0.03) + offset;
+                    lng -= (noise * 0.3) + offset;
+                    
+                    path.push([lat, lng]);
+                }
+            }
+            
+            // Conecta o último waypoint (Careiro) até o ponto final individual do streamer
+            const lastWaypoint = routeWaypoints[routeWaypoints.length - 1];
+            const endSegments = 10;
+            for (let j = 0; j <= endSegments; j++) {
+                const fraction = j / endSegments;
+                let lat = lastWaypoint[0] + (endPoint[0] - lastWaypoint[0]) * fraction;
+                let lng = lastWaypoint[1] + (endPoint[1] - lastWaypoint[1]) * fraction;
+                
+                if (j < endSegments) {
+                    lat += offset;
+                    lng += offset;
+                }
+                path.push([lat, lng]);
+            }
+            
+            return path;
+        }
+
+        const sidebarList = document.getElementById('streamer-list');
+        const defaultAvatar = "https://ui-avatars.com/api/?background=random&color=fff&name=";
+
+        // Renderizar Elementos
+        streamers.forEach((streamer, index) => {
+            // Desenhar a linha do trajeto longo de SP -> Manaus
+            const pathLatLngs = generateFakePath(streamer.latLng, index);
+            L.polyline(pathLatLngs, {
+                color: streamer.color,
+                weight: 4,
+                opacity: 0.8,
+                lineJoin: 'round'
+            }).addTo(map);
+
+            // Marcador Customizado
+            const customIcon = L.divIcon({
+                className: '',
+                html: `
+                    <div class="streamer-marker" style="--marker-color: ${streamer.color}">
+                        <div class="streamer-avatar-wrapper">
+                            <img src="${streamer.avatar}" onerror="this.onerror=null;this.src='${defaultAvatar + streamer.name}'" class="streamer-avatar" alt="${streamer.name}">
+                            <div class="streamer-status-dot"></div>
+                        </div>
+                        <div class="streamer-name-tag">${streamer.name.split(' ')[0]}</div>
+                    </div>
+                `,
+                iconSize: [60, 60],
+                iconAnchor: [30, 30] 
+            });
+            L.marker(streamer.latLng, { icon: customIcon }).addTo(map);
+
+            // Item na Sidebar
+            const socialHtml = streamer.socials.map(icon => `<button class="social-btn" onclick="event.stopPropagation(); showDemoToast('Redes Sociais')"><i class="fa-brands ${icon}"></i></button>`).join('');
+            
+            const listItemHtml = `
+                <div class="flex p-2.5 rounded-xl hover:bg-white/5 cursor-pointer transition-colors group" onclick="showDemoToast('Câmera de ${streamer.name.split(' ')[0]}')">
+                    <div class="relative flex-shrink-0 mr-3">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden" style="background-color: ${streamer.color}">
+                            <img src="${streamer.avatar}" onerror="this.onerror=null;this.src='${defaultAvatar + streamer.name}'" class="w-[36px] h-[36px] rounded-full object-cover border-2 border-black" alt="${streamer.name}">
+                        </div>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-1.5 mb-1">
+                            <h3 class="text-sm font-semibold text-white/90 truncate group-hover:text-white transition-colors">${streamer.name}</h3>
+                            ${streamer.isCrown ? '<i class="fa-solid fa-crown text-yellow-500 text-[10px]" title="Host"></i>' : ''}
+                        </div>
+                        <div class="flex items-center flex-wrap gap-2">
+                            <span class="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Live</span>
+                            ${streamer.speed ? `<span class="text-xs text-ratonet-textMuted">${streamer.speed}</span>` : ''}
+                        </div>
+                        ${socialHtml ? `<div class="flex gap-1.5 mt-2">${socialHtml}</div>` : ''}
+                    </div>
+                </div>
+            `;
+            sidebarList.insertAdjacentHTML('beforeend', listItemHtml);
+        });
+
+        // Ajustar visualização para mostrar toda a rota do Brasil
+        setTimeout(() => {
+            const bounds = L.latLngBounds([
+                [-23.5505, -46.6333], // Fundo: São Paulo
+                [-7.2307, -35.8811],  // Lateral: Paraíba
+                [-3.15, -60.15]       // Topo: Região de Manaus
+            ]);
+            map.fitBounds(bounds, { padding: [30, 30] });
+        }, 100);
+    </script>
+</body>
+</html>
