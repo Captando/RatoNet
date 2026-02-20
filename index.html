@@ -226,19 +226,23 @@
     <!-- Scripts Leaflet e Lógica -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script>
+        // ============================================================
+        // RatoNet Dashboard - Frontend com WebSocket em tempo real
+        // ============================================================
+
         // Sistema simples de Notificações (Toast) para o Modo Demo
         function showDemoToast(featureName) {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
-            
+
             toast.className = 'bg-[#111] border border-ratonet-primary text-white px-4 py-3 rounded-xl text-sm font-medium shadow-2xl backdrop-blur-md transform transition-all duration-300 translate-y-4 opacity-0 flex items-center gap-3';
             toast.innerHTML = `
                 <div class="bg-ratonet-primary/20 p-2 rounded-lg text-ratonet-primary"><i class="fa-solid fa-person-digging"></i></div>
                 <div>A aba <span class="text-ratonet-primary font-bold">${featureName}</span> está em modo demo.<br><span class="text-xs text-white/60 font-normal">Integração funcional em breve!</span></div>
             `;
-            
+
             container.appendChild(toast);
-            
+
             requestAnimationFrame(() => {
                 toast.classList.remove('translate-y-4', 'opacity-0');
                 toast.classList.add('translate-y-0', 'opacity-100');
@@ -251,23 +255,25 @@
             }, 3500);
         }
 
-        // Dados da Transmissão (Agora em 0km/h e posicionados nas redondezas de Manaus)
-        const streamers = [
-            { id: 1, name: "Ricardo ACF", speed: "0 km/h", isCrown: true, color: "#f97316", latLng: [-3.15, -59.95], avatar: "https://helios.ratonet.com.br/api/v1/users/cml9nyu730002l1rgtvkt8j3i/avatar", socials: [] },
-            { id: 2, name: "Douglas Mesquita", speed: "0 km/h", color: "#ec4899", latLng: [-3.20, -59.90], avatar: "https://helios.ratonet.com.br/api/v1/users/cml15dn9n000011u4n2d28d9w/avatar", socials: ['fa-instagram', 'fa-tiktok', 'fa-twitter', 'fa-youtube'] },
-            { id: 3, name: "Guilherme Tonimek", speed: "0 km/h", color: "#3b82f6", latLng: [-3.25, -60.05], avatar: "https://helios.ratonet.com.br/api/v1/users/cmlhvr4by00w7hchbnauo56w9/avatar", socials: [] },
-            { id: 4, name: "Willian Gordox", speed: "0 km/h", color: "#a855f7", latLng: [-3.30, -59.85], avatar: "https://helios.ratonet.com.br/api/v1/users/cmljanpob008010dxlpec5h0g/avatar", socials: [] },
-            { id: 5, name: "Richard Rasmussen", speed: "0 km/h", color: "#10b981", latLng: [-3.35, -60.15], avatar: "https://helios.ratonet.com.br/api/v1/users/cmlgm0t5y00k5r75t0x47q6w6/avatar", socials: [] },
-            { id: 6, name: "Julio Balestrin", speed: "0 km/h", color: "#ef4444", latLng: [-3.40, -59.80], avatar: "https://helios.ratonet.com.br/api/v1/users/cmlrtqxlx2fwsec7havmx7v6d/avatar", socials: [] }
-        ];
+        // Estado global dos streamers (alimentado via WebSocket ou fallback)
+        let streamers = [];
+        const markers = {};      // id → L.marker
+        const polylines = {};    // id → L.polyline
+
+        // Mapa de ícones sociais (backend envia nomes simples, frontend converte para Font Awesome)
+        const socialIconMap = {
+            'instagram': 'fa-instagram',
+            'tiktok': 'fa-tiktok',
+            'twitter': 'fa-twitter',
+            'youtube': 'fa-youtube',
+        };
 
         // Inicializar Mapa
         const map = L.map('map', {
             zoomControl: false,
             attributionControl: false
-        }).setView([-13.0, -52.0], 5); // Foca de forma abrangente no Brasil no load
+        }).setView([-13.0, -52.0], 5);
 
-        // Layer de Mapa Escuro CartoDB
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
             maxZoom: 19,
         }).addTo(map);
@@ -278,127 +284,259 @@
 
         // Waypoints principais simulando a rota SP -> PB -> PA -> AM (Pelas BRs)
         const routeWaypoints = [
-            [-23.5505, -46.6333], // São Paulo, SP
-            [-19.9208, -43.9378], // Belo Horizonte, MG (BR-381)
-            [-14.8661, -40.8394], // Vitória da Conquista, BA (BR-116)
-            [-12.2660, -38.9667], // Feira de Santana, BA (BR-116)
-            [-7.2307, -35.8811],  // Campina Grande, PB (BR-230) - Chegada na Paraíba
-            [-7.0197, -37.2805],  // Patos, PB (BR-230)
-            [-7.0772, -41.4661],  // Picos, PI
-            [-5.5185, -47.4777],  // Imperatriz, MA (BR-010)
-            [-5.3686, -49.0964],  // Marabá, PA (Início real da Transamazônica no Pará)
-            [-3.2033, -52.2064],  // Altamira, PA (BR-230)
-            [-4.2761, -55.9836],  // Itaituba, PA (BR-230)
-            [-6.2200, -57.7500],  // Jacareacanga, PA
-            [-3.8100, -59.8200]   // Careiro, AM (Chegando em Manaus)
+            [-23.5505, -46.6333], [-19.9208, -43.9378], [-14.8661, -40.8394],
+            [-12.2660, -38.9667], [-7.2307, -35.8811], [-7.0197, -37.2805],
+            [-7.0772, -41.4661], [-5.5185, -47.4777], [-5.3686, -49.0964],
+            [-3.2033, -52.2064], [-4.2761, -55.9836], [-6.2200, -57.7500],
+            [-3.8100, -59.8200]
         ];
 
-        // Função para gerar um trajeto seguindo os waypoints
         function generateFakePath(endPoint, index) {
             const path = [];
-            const offset = index * 0.04; // Espaçamento para não sobrepor as 6 linhas
-            
-            // Interpola os pontos base para criar uma linha que simula a rodovia
+            const offset = index * 0.04;
+
             for (let i = 0; i < routeWaypoints.length - 1; i++) {
                 const start = routeWaypoints[i];
                 const end = routeWaypoints[i+1];
-                
-                const segments = 15; // Quebra cada trecho em partes para fazer curvas
+                const segments = 15;
                 for (let j = 0; j < segments; j++) {
                     const fraction = j / segments;
                     let lat = start[0] + (end[0] - start[0]) * fraction;
                     let lng = start[1] + (end[1] - start[1]) * fraction;
-                    
-                    // Adiciona um ruído para simular as curvas e irregularidades das rodovias reais
-                    const noise = Math.sin(fraction * Math.PI) * 0.2; 
+                    const noise = Math.sin(fraction * Math.PI) * 0.2;
                     lat += noise + (Math.random() * 0.06 - 0.03) + offset;
                     lng -= (noise * 0.3) + offset;
-                    
                     path.push([lat, lng]);
                 }
             }
-            
-            // Conecta o último waypoint (Careiro) até o ponto final individual do streamer
+
             const lastWaypoint = routeWaypoints[routeWaypoints.length - 1];
             const endSegments = 10;
             for (let j = 0; j <= endSegments; j++) {
                 const fraction = j / endSegments;
                 let lat = lastWaypoint[0] + (endPoint[0] - lastWaypoint[0]) * fraction;
                 let lng = lastWaypoint[1] + (endPoint[1] - lastWaypoint[1]) * fraction;
-                
-                if (j < endSegments) {
-                    lat += offset;
-                    lng += offset;
-                }
+                if (j < endSegments) { lat += offset; lng += offset; }
                 path.push([lat, lng]);
             }
-            
+
             return path;
         }
 
         const sidebarList = document.getElementById('streamer-list');
         const defaultAvatar = "https://ui-avatars.com/api/?background=random&color=fff&name=";
 
-        // Renderizar Elementos
-        streamers.forEach((streamer, index) => {
-            // Desenhar a linha do trajeto longo de SP -> Manaus
-            const pathLatLngs = generateFakePath(streamer.latLng, index);
-            L.polyline(pathLatLngs, {
-                color: streamer.color,
-                weight: 4,
-                opacity: 0.8,
-                lineJoin: 'round'
-            }).addTo(map);
+        // ============================================================
+        // Renderização de streamers (reutilizado por WebSocket e fallback)
+        // ============================================================
 
-            // Marcador Customizado
-            const customIcon = L.divIcon({
-                className: '',
-                html: `
-                    <div class="streamer-marker" style="--marker-color: ${streamer.color}">
-                        <div class="streamer-avatar-wrapper">
-                            <img src="${streamer.avatar}" onerror="this.onerror=null;this.src='${defaultAvatar + streamer.name}'" class="streamer-avatar" alt="${streamer.name}">
-                            <div class="streamer-status-dot"></div>
+        function renderStreamers(streamerList) {
+            // Limpa sidebar
+            sidebarList.innerHTML = '';
+
+            // Atualiza header
+            const liveCount = streamerList.filter(s => s.is_live).length;
+            const headerSubtitle = document.querySelector('.ui-layer.top-0.right-0 .text-xs.text-ratonet-textMuted');
+            if (headerSubtitle) {
+                headerSubtitle.textContent = `${streamerList.length} transmitindo • ${liveCount} ao vivo`;
+            }
+
+            streamerList.forEach((streamer, index) => {
+                const latLng = [streamer.gps.lat, streamer.gps.lng];
+                const speed = streamer.gps.speed_kmh;
+                const speedText = speed > 0 ? `${Math.round(speed)} km/h` : '0 km/h';
+                const socials = (streamer.socials || []).map(s => socialIconMap[s] || `fa-${s}`);
+                const healthScore = streamer.health ? streamer.health.score : null;
+                const healthState = streamer.health ? streamer.health.state : 'healthy';
+
+                // Cor do indicador de saúde
+                let healthColor = '#10b981'; // green
+                if (healthState === 'degraded') healthColor = '#f59e0b';
+                else if (healthState === 'critical') healthColor = '#ef4444';
+                else if (healthState === 'down') healthColor = '#6b7280';
+
+                // --- Marcador no mapa ---
+                if (markers[streamer.id]) {
+                    // Atualiza posição do marcador existente (animação suave)
+                    markers[streamer.id].setLatLng(latLng);
+                } else {
+                    // Cria rota + marcador pela primeira vez
+                    const pathLatLngs = generateFakePath(latLng, index);
+                    polylines[streamer.id] = L.polyline(pathLatLngs, {
+                        color: streamer.color,
+                        weight: 4,
+                        opacity: 0.8,
+                        lineJoin: 'round'
+                    }).addTo(map);
+
+                    const customIcon = L.divIcon({
+                        className: '',
+                        html: `
+                            <div class="streamer-marker" style="--marker-color: ${streamer.color}">
+                                <div class="streamer-avatar-wrapper">
+                                    <img src="${streamer.avatar_url}" onerror="this.onerror=null;this.src='${defaultAvatar + streamer.name}'" class="streamer-avatar" alt="${streamer.name}">
+                                    <div class="streamer-status-dot" style="background-color: ${streamer.is_live ? '#ef4444' : '#6b7280'}"></div>
+                                </div>
+                                <div class="streamer-name-tag">${streamer.name.split(' ')[0]}</div>
+                            </div>
+                        `,
+                        iconSize: [60, 60],
+                        iconAnchor: [30, 30]
+                    });
+                    markers[streamer.id] = L.marker(latLng, { icon: customIcon }).addTo(map);
+                }
+
+                // --- Item na Sidebar ---
+                const socialHtml = socials.map(icon =>
+                    `<button class="social-btn" onclick="event.stopPropagation(); showDemoToast('Redes Sociais')"><i class="fa-brands ${icon}"></i></button>`
+                ).join('');
+
+                // Health badge
+                const healthBadge = healthScore !== null
+                    ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded" style="background: ${healthColor}20; color: ${healthColor}">${healthScore}%</span>`
+                    : '';
+
+                const listItemHtml = `
+                    <div class="flex p-2.5 rounded-xl hover:bg-white/5 cursor-pointer transition-colors group" onclick="showDemoToast('Câmera de ${streamer.name.split(' ')[0]}')">
+                        <div class="relative flex-shrink-0 mr-3">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden" style="background-color: ${streamer.color}">
+                                <img src="${streamer.avatar_url}" onerror="this.onerror=null;this.src='${defaultAvatar + streamer.name}'" class="w-[36px] h-[36px] rounded-full object-cover border-2 border-black" alt="${streamer.name}">
+                            </div>
                         </div>
-                        <div class="streamer-name-tag">${streamer.name.split(' ')[0]}</div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-1.5 mb-1">
+                                <h3 class="text-sm font-semibold text-white/90 truncate group-hover:text-white transition-colors">${streamer.name}</h3>
+                                ${streamer.is_crown ? '<i class="fa-solid fa-crown text-yellow-500 text-[10px]" title="Host"></i>' : ''}
+                            </div>
+                            <div class="flex items-center flex-wrap gap-2">
+                                <span class="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">${streamer.is_live ? 'Live' : 'Offline'}</span>
+                                <span class="text-xs text-ratonet-textMuted">${speedText}</span>
+                                ${healthBadge}
+                            </div>
+                            ${socialHtml ? `<div class="flex gap-1.5 mt-2">${socialHtml}</div>` : ''}
+                        </div>
                     </div>
-                `,
-                iconSize: [60, 60],
-                iconAnchor: [30, 30] 
+                `;
+                sidebarList.insertAdjacentHTML('beforeend', listItemHtml);
             });
-            L.marker(streamer.latLng, { icon: customIcon }).addTo(map);
+        }
 
-            // Item na Sidebar
-            const socialHtml = streamer.socials.map(icon => `<button class="social-btn" onclick="event.stopPropagation(); showDemoToast('Redes Sociais')"><i class="fa-brands ${icon}"></i></button>`).join('');
-            
-            const listItemHtml = `
-                <div class="flex p-2.5 rounded-xl hover:bg-white/5 cursor-pointer transition-colors group" onclick="showDemoToast('Câmera de ${streamer.name.split(' ')[0]}')">
-                    <div class="relative flex-shrink-0 mr-3">
-                        <div class="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden" style="background-color: ${streamer.color}">
-                            <img src="${streamer.avatar}" onerror="this.onerror=null;this.src='${defaultAvatar + streamer.name}'" class="w-[36px] h-[36px] rounded-full object-cover border-2 border-black" alt="${streamer.name}">
-                        </div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-1.5 mb-1">
-                            <h3 class="text-sm font-semibold text-white/90 truncate group-hover:text-white transition-colors">${streamer.name}</h3>
-                            ${streamer.isCrown ? '<i class="fa-solid fa-crown text-yellow-500 text-[10px]" title="Host"></i>' : ''}
-                        </div>
-                        <div class="flex items-center flex-wrap gap-2">
-                            <span class="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Live</span>
-                            ${streamer.speed ? `<span class="text-xs text-ratonet-textMuted">${streamer.speed}</span>` : ''}
-                        </div>
-                        ${socialHtml ? `<div class="flex gap-1.5 mt-2">${socialHtml}</div>` : ''}
-                    </div>
-                </div>
-            `;
-            sidebarList.insertAdjacentHTML('beforeend', listItemHtml);
-        });
+        // ============================================================
+        // WebSocket - Conexão com o backend RatoNet
+        // ============================================================
+
+        let ws = null;
+        let wsReconnectTimer = null;
+
+        function connectWebSocket() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${location.host}/ws/dashboard`;
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('[RatoNet] WebSocket conectado');
+                // Atualiza banner para indicar conexão ao vivo
+                const banner = document.querySelector('.ui-layer.top-6 .text-yellow-400 span');
+                if (banner) {
+                    banner.textContent = 'Conectado ao servidor — dados em tempo real';
+                    banner.closest('div').classList.remove('bg-yellow-500/10', 'border-yellow-500/30', 'text-yellow-400');
+                    banner.closest('div').classList.add('bg-green-500/10', 'border-green-500/30', 'text-green-400');
+                }
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+
+                    if (msg.type === 'full_sync' && msg.data.streamers) {
+                        streamers = msg.data.streamers;
+                        renderStreamers(streamers);
+                    } else if (msg.type === 'streamer_update' && msg.data.streamer) {
+                        // Atualiza streamer individual
+                        const idx = streamers.findIndex(s => s.id === msg.data.streamer_id);
+                        if (idx !== -1) {
+                            streamers[idx] = msg.data.streamer;
+                        } else {
+                            streamers.push(msg.data.streamer);
+                        }
+                        renderStreamers(streamers);
+                    }
+                } catch (e) {
+                    console.warn('[RatoNet] Erro ao processar mensagem:', e);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log('[RatoNet] WebSocket desconectado, reconectando em 3s...');
+                wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.warn('[RatoNet] WebSocket erro:', err);
+                ws.close();
+            };
+        }
+
+        // ============================================================
+        // Fallback: dados mockados caso o backend não esteja disponível
+        // ============================================================
+
+        const fallbackStreamers = [
+            { id: "1", name: "Ricardo ACF", color: "#f97316", is_crown: true, is_live: true,
+              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cml9nyu730002l1rgtvkt8j3i/avatar",
+              socials: [], gps: { lat: -3.15, lng: -59.95, speed_kmh: 0 }, health: { score: 92, state: "healthy" } },
+            { id: "2", name: "Douglas Mesquita", color: "#ec4899", is_crown: false, is_live: true,
+              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cml15dn9n000011u4n2d28d9w/avatar",
+              socials: ['instagram', 'tiktok', 'twitter', 'youtube'], gps: { lat: -3.20, lng: -59.90, speed_kmh: 11 }, health: { score: 85, state: "healthy" } },
+            { id: "3", name: "Guilherme Tonimek", color: "#3b82f6", is_crown: false, is_live: true,
+              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cmlhvr4by00w7hchbnauo56w9/avatar",
+              socials: [], gps: { lat: -3.25, lng: -60.05, speed_kmh: 12 }, health: { score: 78, state: "healthy" } },
+            { id: "4", name: "Willian Gordox", color: "#a855f7", is_crown: false, is_live: true,
+              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cmljanpob008010dxlpec5h0g/avatar",
+              socials: [], gps: { lat: -3.30, lng: -59.85, speed_kmh: 70 }, health: { score: 95, state: "healthy" } },
+            { id: "5", name: "Richard Rasmussen", color: "#10b981", is_crown: false, is_live: true,
+              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cmlgm0t5y00k5r75t0x47q6w6/avatar",
+              socials: [], gps: { lat: -3.35, lng: -60.15, speed_kmh: 0 }, health: { score: 60, state: "degraded" } },
+            { id: "6", name: "Julio Balestrin", color: "#ef4444", is_crown: false, is_live: true,
+              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cmlrtqxlx2fwsec7havmx7v6d/avatar",
+              socials: [], gps: { lat: -3.40, lng: -59.80, speed_kmh: 0 }, health: { score: 88, state: "healthy" } }
+        ];
+
+        // ============================================================
+        // Inicialização
+        // ============================================================
+
+        // Tenta conectar via WebSocket; se falhar, usa fallback
+        try {
+            // Testa se estamos sendo servidos pelo FastAPI (mesma origin)
+            if (location.port && location.port !== '0') {
+                connectWebSocket();
+            } else {
+                throw new Error('Sem servidor');
+            }
+        } catch(e) {
+            // Fallback: renderiza com dados mockados
+            console.log('[RatoNet] Backend indisponível, usando dados de fallback');
+            streamers = fallbackStreamers;
+            renderStreamers(streamers);
+        }
+
+        // Se após 2s não recebeu dados do WS, renderiza o fallback
+        setTimeout(() => {
+            if (streamers.length === 0) {
+                console.log('[RatoNet] Timeout WebSocket, usando dados de fallback');
+                streamers = fallbackStreamers;
+                renderStreamers(streamers);
+            }
+        }, 2000);
 
         // Ajustar visualização para mostrar toda a rota do Brasil
         setTimeout(() => {
             const bounds = L.latLngBounds([
-                [-23.5505, -46.6333], // Fundo: São Paulo
-                [-7.2307, -35.8811],  // Lateral: Paraíba
-                [-3.15, -60.15]       // Topo: Região de Manaus
+                [-23.5505, -46.6333],
+                [-7.2307, -35.8811],
+                [-3.15, -60.15]
             ]);
             map.fitBounds(bounds, { padding: [30, 30] });
         }, 100);
