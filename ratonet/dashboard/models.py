@@ -100,3 +100,52 @@ class DashboardUpdate(BaseModel):
     """Mensagem enviada ao frontend via WebSocket."""
     type: str  # "streamer_update", "health_update", "full_sync"
     data: dict
+
+
+# --- Registro / API ---
+
+class RegisterRequest(BaseModel):
+    """Request de cadastro de novo streamer."""
+    name: str
+    email: str
+    avatar_url: str = ""
+    color: str = "#ff6600"
+    socials: List[str] = Field(default_factory=list)
+
+
+class RegisterResponse(BaseModel):
+    """Response do cadastro com credenciais."""
+    id: str
+    name: str
+    api_key: str
+    approved: bool
+    server_url: str = ""
+    message: str = ""
+
+
+class ProfileUpdate(BaseModel):
+    """Request de atualização de perfil."""
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    color: Optional[str] = None
+    socials: Optional[List[str]] = None
+
+
+class StreamerPublic(BaseModel):
+    """Dados públicos do streamer (sem api_key)."""
+    id: str
+    name: str
+    avatar_url: str = ""
+    color: str = "#ff6600"
+    is_crown: bool = False
+    is_live: bool = False
+    socials: List[str] = Field(default_factory=list)
+    approved: bool = False
+
+    gps: GPSPosition = Field(default_factory=GPSPosition)
+    hardware: HardwareMetrics = Field(default_factory=HardwareMetrics)
+    network_links: List[NetworkLink] = Field(default_factory=list)
+    starlink: StarlinkMetrics = Field(default_factory=StarlinkMetrics)
+    health: HealthStatus = Field(default_factory=HealthStatus)
+
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

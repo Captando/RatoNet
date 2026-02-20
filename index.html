@@ -138,11 +138,11 @@
     <!-- Container do Mapa -->
     <div id="map"></div>
 
-    <!-- Banner de Modo Demo/Mock -->
-    <div class="ui-layer top-6 left-1/2 -translate-x-1/2 w-max max-w-[90vw]">
-        <div class="bg-yellow-500/10 backdrop-blur-md border border-yellow-500/30 text-yellow-400 px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 shadow-lg">
-            <i class="fa-solid fa-flask text-sm"></i>
-            <span class="text-center">Modo Demo: Dados mockados. O código funcional e os dados reais serão inseridos em breve!</span>
+    <!-- Banner de Status da Conexão -->
+    <div id="status-banner" class="ui-layer top-6 left-1/2 -translate-x-1/2 w-max max-w-[90vw]">
+        <div class="bg-blue-500/10 backdrop-blur-md border border-blue-500/30 text-blue-400 px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 shadow-lg">
+            <i class="fa-solid fa-satellite-dish text-sm"></i>
+            <span class="text-center">Conectando ao servidor...</span>
         </div>
     </div>
 
@@ -331,6 +331,12 @@
         // ============================================================
 
         function renderStreamers(streamerList) {
+            // Se lista vazia, mostra estado vazio
+            if (!streamerList || streamerList.length === 0) {
+                renderEmptyState();
+                return;
+            }
+
             // Limpa sidebar
             sidebarList.innerHTML = '';
 
@@ -436,13 +442,7 @@
 
             ws.onopen = () => {
                 console.log('[RatoNet] WebSocket conectado');
-                // Atualiza banner para indicar conexão ao vivo
-                const banner = document.querySelector('.ui-layer.top-6 .text-yellow-400 span');
-                if (banner) {
-                    banner.textContent = 'Conectado ao servidor — dados em tempo real';
-                    banner.closest('div').classList.remove('bg-yellow-500/10', 'border-yellow-500/30', 'text-yellow-400');
-                    banner.closest('div').classList.add('bg-green-500/10', 'border-green-500/30', 'text-green-400');
-                }
+                updateBanner('connected');
             };
 
             ws.onmessage = (event) => {
@@ -453,12 +453,34 @@
                         streamers = msg.data.streamers;
                         renderStreamers(streamers);
                     } else if (msg.type === 'streamer_update' && msg.data.streamer) {
-                        // Atualiza streamer individual
                         const idx = streamers.findIndex(s => s.id === msg.data.streamer_id);
                         if (idx !== -1) {
                             streamers[idx] = msg.data.streamer;
                         } else {
                             streamers.push(msg.data.streamer);
+                        }
+                        renderStreamers(streamers);
+                    } else if (msg.type === 'streamer_online' && msg.data.streamer) {
+                        const existing = streamers.findIndex(s => s.id === msg.data.streamer.id);
+                        if (existing !== -1) {
+                            streamers[existing] = msg.data.streamer;
+                        } else {
+                            streamers.push(msg.data.streamer);
+                        }
+                        renderStreamers(streamers);
+                    } else if (msg.type === 'streamer_offline' && msg.data.streamer_id) {
+                        const idx = streamers.findIndex(s => s.id === msg.data.streamer_id);
+                        if (idx !== -1) {
+                            // Remove marcador e rota do mapa
+                            if (markers[msg.data.streamer_id]) {
+                                map.removeLayer(markers[msg.data.streamer_id]);
+                                delete markers[msg.data.streamer_id];
+                            }
+                            if (polylines[msg.data.streamer_id]) {
+                                map.removeLayer(polylines[msg.data.streamer_id]);
+                                delete polylines[msg.data.streamer_id];
+                            }
+                            streamers.splice(idx, 1);
                         }
                         renderStreamers(streamers);
                     }
@@ -469,6 +491,7 @@
 
             ws.onclose = () => {
                 console.log('[RatoNet] WebSocket desconectado, reconectando em 3s...');
+                updateBanner('disconnected');
                 wsReconnectTimer = setTimeout(connectWebSocket, 3000);
             };
 
@@ -479,59 +502,94 @@
         }
 
         // ============================================================
-        // Fallback: dados mockados caso o backend não esteja disponível
+        // Banner de status + estado vazio
         // ============================================================
 
-        const fallbackStreamers = [
-            { id: "1", name: "Ricardo ACF", color: "#f97316", is_crown: true, is_live: true,
-              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cml9nyu730002l1rgtvkt8j3i/avatar",
-              socials: [], gps: { lat: -3.15, lng: -59.95, speed_kmh: 0 }, health: { score: 92, state: "healthy" } },
-            { id: "2", name: "Douglas Mesquita", color: "#ec4899", is_crown: false, is_live: true,
-              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cml15dn9n000011u4n2d28d9w/avatar",
-              socials: ['instagram', 'tiktok', 'twitter', 'youtube'], gps: { lat: -3.20, lng: -59.90, speed_kmh: 11 }, health: { score: 85, state: "healthy" } },
-            { id: "3", name: "Guilherme Tonimek", color: "#3b82f6", is_crown: false, is_live: true,
-              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cmlhvr4by00w7hchbnauo56w9/avatar",
-              socials: [], gps: { lat: -3.25, lng: -60.05, speed_kmh: 12 }, health: { score: 78, state: "healthy" } },
-            { id: "4", name: "Willian Gordox", color: "#a855f7", is_crown: false, is_live: true,
-              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cmljanpob008010dxlpec5h0g/avatar",
-              socials: [], gps: { lat: -3.30, lng: -59.85, speed_kmh: 70 }, health: { score: 95, state: "healthy" } },
-            { id: "5", name: "Richard Rasmussen", color: "#10b981", is_crown: false, is_live: true,
-              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cmlgm0t5y00k5r75t0x47q6w6/avatar",
-              socials: [], gps: { lat: -3.35, lng: -60.15, speed_kmh: 0 }, health: { score: 60, state: "degraded" } },
-            { id: "6", name: "Julio Balestrin", color: "#ef4444", is_crown: false, is_live: true,
-              avatar_url: "https://helios.ratonet.com.br/api/v1/users/cmlrtqxlx2fwsec7havmx7v6d/avatar",
-              socials: [], gps: { lat: -3.40, lng: -59.80, speed_kmh: 0 }, health: { score: 88, state: "healthy" } }
-        ];
+        function updateBanner(state) {
+            const banner = document.querySelector('#status-banner > div');
+            if (!banner) return;
+            const span = banner.querySelector('span');
+            const icon = banner.querySelector('i');
+
+            // Remove classes anteriores
+            banner.className = 'backdrop-blur-md px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 shadow-lg';
+
+            if (state === 'connected') {
+                banner.classList.add('bg-green-500/10', 'border', 'border-green-500/30', 'text-green-400');
+                icon.className = 'fa-solid fa-signal text-sm';
+                span.textContent = 'Conectado ao servidor — dados em tempo real';
+                // Esconde banner após 3s
+                setTimeout(() => { document.getElementById('status-banner').style.display = 'none'; }, 3000);
+            } else if (state === 'disconnected') {
+                banner.classList.add('bg-yellow-500/10', 'border', 'border-yellow-500/30', 'text-yellow-400');
+                icon.className = 'fa-solid fa-satellite-dish text-sm';
+                span.textContent = 'Reconectando ao servidor...';
+                document.getElementById('status-banner').style.display = '';
+            } else if (state === 'api_fallback') {
+                banner.classList.add('bg-blue-500/10', 'border', 'border-blue-500/30', 'text-blue-400');
+                icon.className = 'fa-solid fa-database text-sm';
+                span.textContent = 'Dados via API — sem tempo real';
+                setTimeout(() => { document.getElementById('status-banner').style.display = 'none'; }, 5000);
+            } else if (state === 'empty') {
+                banner.classList.add('bg-white/5', 'border', 'border-white/10', 'text-white/60');
+                icon.className = 'fa-solid fa-satellite-dish text-sm';
+                span.textContent = 'Nenhum streamer ao vivo no momento';
+                document.getElementById('status-banner').style.display = '';
+            }
+        }
+
+        function renderEmptyState() {
+            sidebarList.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-12 text-center">
+                    <div class="text-4xl mb-4 opacity-30"><i class="fa-solid fa-satellite-dish"></i></div>
+                    <h3 class="text-sm font-semibold text-white/50 mb-2">Nenhum streamer ao vivo</h3>
+                    <p class="text-xs text-white/30 px-4">Quando streamers conectarem seus field agents, eles aparecerão aqui automaticamente.</p>
+                </div>
+            `;
+        }
+
+        // Fallback via API REST (sem WebSocket)
+        async function fetchStreamersFromAPI() {
+            try {
+                const resp = await fetch('/api/streamers');
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (data.length > 0) {
+                    streamers = data;
+                    renderStreamers(streamers);
+                    updateBanner('api_fallback');
+                } else {
+                    renderEmptyState();
+                    updateBanner('empty');
+                }
+            } catch(e) {
+                console.log('[RatoNet] API também indisponível:', e.message);
+                renderEmptyState();
+                updateBanner('empty');
+            }
+        }
 
         // ============================================================
         // Inicialização
         // ============================================================
 
-        // Tenta conectar via WebSocket; se falhar, usa fallback
+        // Tenta conectar via WebSocket
         try {
-            // Testa se estamos sendo servidos pelo FastAPI (mesma origin)
-            if (location.port && location.port !== '0') {
-                connectWebSocket();
-            } else {
-                throw new Error('Sem servidor');
-            }
+            connectWebSocket();
         } catch(e) {
-            // Fallback: renderiza com dados mockados
-            console.log('[RatoNet] Backend indisponível, usando dados de fallback');
-            streamers = fallbackStreamers;
-            renderStreamers(streamers);
+            console.log('[RatoNet] WebSocket indisponível, tentando API...');
+            fetchStreamersFromAPI();
         }
 
-        // Se após 2s não recebeu dados do WS, renderiza o fallback
+        // Se após 3s não recebeu dados do WS, tenta via API REST
         setTimeout(() => {
             if (streamers.length === 0) {
-                console.log('[RatoNet] Timeout WebSocket, usando dados de fallback');
-                streamers = fallbackStreamers;
-                renderStreamers(streamers);
+                console.log('[RatoNet] Timeout WebSocket, buscando via API...');
+                fetchStreamersFromAPI();
             }
-        }, 2000);
+        }, 3000);
 
-        // Ajustar visualização para mostrar toda a rota do Brasil
+        // Ajustar visualização para mostrar o Brasil
         setTimeout(() => {
             const bounds = L.latLngBounds([
                 [-23.5505, -46.6333],

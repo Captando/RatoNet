@@ -1,34 +1,168 @@
-"""REST endpoints do dashboard."""
+"""REST endpoints do dashboard — registro, perfil, streamers, saúde."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query
 
 from ratonet.common.logger import get_logger
+from ratonet.config import settings
+from ratonet.dashboard import db
+from ratonet.dashboard.models import ProfileUpdate, RegisterRequest, RegisterResponse
 from ratonet.dashboard.ws_handler import manager
 
 log = get_logger("routes")
 router = APIRouter(prefix="/api")
 
 
+# --- Registro ---
+
+@router.post("/register", response_model=RegisterResponse)
+async def register_streamer(req: RegisterRequest):
+    """Cadastra novo streamer na plataforma."""
+    existing = await db.get_streamer_by_email(req.email, db_path=settings.database.path)
+    if existing:
+        raise HTTPException(status_code=409, detail="Email já cadastrado")
+
+    result = await db.create_streamer(
+        name=req.name,
+        email=req.email,
+        avatar_url=req.avatar_url,
+        color=req.color,
+        socials=req.socials,
+        auto_approve=settings.database.auto_approve,
+        db_path=settings.database.path,
+    )
+
+    msg = "Cadastro realizado! Aguardando aprovação do admin."
+    if settings.database.auto_approve:
+        msg = "Cadastro aprovado automaticamente. Configure seu field agent."
+
+    return RegisterResponse(
+        id=result["id"],
+        name=result["name"],
+        api_key=result["api_key"],
+        approved=result["approved"],
+        server_url=settings.field.server_ws_url,
+        message=msg,
+    )
+
+
+# --- Perfil do Streamer (autenticado por api_key) ---
+
+async def _get_current_streamer(api_key: str):
+    """Autentica streamer pela API key."""
+    if not api_key:
+        raise HTTPException(status_code=401, detail="API key obrigatória")
+    streamer = await db.get_streamer_by_api_key(api_key, db_path=settings.database.path)
+    if not streamer:
+        raise HTTPException(status_code=401, detail="API key inválida")
+    return streamer
+
+
+@router.get("/me")
+async def get_my_profile(api_key: str = Query(..., description="Sua API key")):
+    """Retorna dados do próprio streamer."""
+    streamer = await _get_current_streamer(api_key)
+    safe = {k: v for k, v in streamer.items() if k != "api_key"}
+    live = manager.streamers.get(streamer["id"])
+    if live:
+        safe["is_live"] = True
+        safe["gps"] = live.gps.model_dump()
+        safe["hardware"] = live.hardware.model_dump()
+        safe["health"] = live.health.model_dump()
+    else:
+        safe["is_live"] = False
+    return safe
+
+
+@router.put("/me")
+async def update_my_profile(
+    update: ProfileUpdate,
+    api_key: str = Query(..., description="Sua API key"),
+):
+    """Atualiza perfil do streamer."""
+    streamer = await _get_current_streamer(api_key)
+    updates = update.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
+    await db.update_streamer(streamer["id"], db_path=settings.database.path, **updates)
+    return {"message": "Perfil atualizado", "updated": list(updates.keys())}
+
+
+@router.get("/me/config")
+async def get_my_field_config(api_key: str = Query(..., description="Sua API key")):
+    """Retorna configuração pronta para o field agent."""
+    streamer = await _get_current_streamer(api_key)
+    return {
+        "streamer_id": streamer["id"],
+        "server_ws_url": settings.field.server_ws_url,
+        "api_key": api_key,
+        "env_content": (
+            f"FIELD_SERVER_WS_URL={settings.field.server_ws_url}\n"
+            f"FIELD_STREAMER_ID={streamer['id']}\n"
+            f"FIELD_API_KEY={api_key}\n"
+            f"FIELD_TELEMETRY_INTERVAL_S=1.0\n"
+            f"FIELD_GPS_DEVICE=localhost:2947\n"
+            f"FIELD_STARLINK_ADDR=192.168.100.1:9200\n"
+        ),
+    }
+
+
+# --- Streamers públicos ---
+
 @router.get("/streamers")
 async def get_streamers():
-    """Retorna lista de streamers ativos com dados atuais."""
-    return [s.model_dump(mode="json") for s in manager.streamers.values()]
+    """Retorna streamers aprovados com dados de telemetria ao vivo."""
+    db_streamers = await db.list_streamers(approved_only=True, db_path=settings.database.path)
+
+    result = []
+    for s in db_streamers:
+        entry = {
+            "id": s["id"],
+            "name": s["name"],
+            "avatar_url": s["avatar_url"],
+            "color": s["color"],
+            "is_crown": s["is_crown"],
+            "socials": s["socials"],
+        }
+        live = manager.streamers.get(s["id"])
+        if live:
+            entry["is_live"] = True
+            entry["gps"] = live.gps.model_dump()
+            entry["hardware"] = live.hardware.model_dump()
+            entry["network_links"] = [nl.model_dump() for nl in live.network_links]
+            entry["starlink"] = live.starlink.model_dump()
+            entry["health"] = live.health.model_dump()
+            entry["updated_at"] = live.updated_at.isoformat()
+        else:
+            entry["is_live"] = False
+        result.append(entry)
+
+    return result
 
 
 @router.get("/streamers/{streamer_id}")
 async def get_streamer(streamer_id: str):
     """Retorna dados de um streamer específico."""
-    streamer = manager.streamers.get(streamer_id)
-    if not streamer:
-        return {"error": "Streamer não encontrado"}, 404
-    return streamer.model_dump(mode="json")
+    s = await db.get_streamer_by_id(streamer_id, db_path=settings.database.path)
+    if not s:
+        raise HTTPException(status_code=404, detail="Streamer não encontrado")
+    if not s["approved"]:
+        raise HTTPException(status_code=403, detail="Streamer não aprovado")
+
+    result = {k: v for k, v in s.items() if k != "api_key"}
+    live = manager.streamers.get(streamer_id)
+    if live:
+        result["is_live"] = True
+        result["gps"] = live.gps.model_dump()
+    else:
+        result["is_live"] = False
+    return result
 
 
 @router.get("/health")
 async def get_health():
-    """Retorna health status de todos os streamers."""
+    """Retorna health status de streamers ao vivo."""
     return {
         sid: {"name": s.name, "health": s.health.model_dump(mode="json")}
         for sid, s in manager.streamers.items()
@@ -38,9 +172,12 @@ async def get_health():
 @router.get("/status")
 async def get_status():
     """Status geral do sistema."""
+    total_registered = len(await db.list_streamers(db_path=settings.database.path))
+    total_approved = len(await db.list_streamers(approved_only=True, db_path=settings.database.path))
     return {
-        "streamers_online": sum(1 for s in manager.streamers.values() if s.is_live),
-        "streamers_total": len(manager.streamers),
+        "streamers_registered": total_registered,
+        "streamers_approved": total_approved,
+        "streamers_online": len(manager.streamers),
         "dashboard_clients": len(manager.dashboard_clients),
         "field_agents": len(manager.field_agents),
     }

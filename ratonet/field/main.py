@@ -34,12 +34,14 @@ class FieldAgent:
         self,
         streamer_id: str,
         server_url: str,
+        api_key: str = "",
         telemetry_interval: float = 1.0,
         network_interval: float = 5.0,
         enable_video: bool = False,
     ) -> None:
         self.streamer_id = streamer_id
         self.server_url = server_url
+        self.api_key = api_key
         self.telemetry_interval = telemetry_interval
         self.network_interval = network_interval
         self.enable_video = enable_video
@@ -101,7 +103,9 @@ class FieldAgent:
     async def _connect_and_run(self) -> None:
         """Conecta ao servidor e inicia loops de envio."""
         url = f"{self.server_url}/{self.streamer_id}"
-        log.info("Conectando a %s ...", url)
+        if self.api_key:
+            url += f"?key={self.api_key}"
+        log.info("Conectando a %s ...", url.split("?")[0])
 
         async with websockets.connect(url) as ws:
             self._ws = ws
@@ -194,7 +198,10 @@ def main() -> None:
     """Entry point CLI."""
     parser = argparse.ArgumentParser(description="RatoNet Field Agent")
     parser.add_argument(
-        "--id", required=True, help="ID do streamer (ex: '1', 'ricardo')"
+        "--id", required=True, help="ID do streamer (UUID recebido no cadastro)"
+    )
+    parser.add_argument(
+        "--key", required=True, help="API key do streamer (recebida no cadastro)"
     )
     parser.add_argument(
         "--server", default=settings.field.server_ws_url,
@@ -213,6 +220,7 @@ def main() -> None:
     agent = FieldAgent(
         streamer_id=args.id,
         server_url=args.server,
+        api_key=args.key,
         telemetry_interval=args.interval,
         enable_video=args.video,
     )

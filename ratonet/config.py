@@ -69,6 +69,23 @@ class HealthConfig(BaseSettings):
     check_interval_s: float = Field(default=2.0, description="Intervalo de checagem (segundos)")
 
 
+class DatabaseConfig(BaseSettings):
+    """Configuração do banco de dados."""
+
+    model_config = {"env_prefix": "DB_"}
+
+    path: str = Field(default="ratonet.db", description="Caminho do arquivo SQLite")
+    auto_approve: bool = Field(default=False, description="Aprovar streamers automaticamente no cadastro")
+
+
+class AdminConfig(BaseSettings):
+    """Configuração de administração."""
+
+    model_config = {"env_prefix": "ADMIN_"}
+
+    token: str = Field(default="", description="Token de autenticação do admin (obrigatório em produção)")
+
+
 class DashboardConfig(BaseSettings):
     """Configuração do dashboard/API."""
 
@@ -89,6 +106,8 @@ class Settings(BaseSettings):
     obs: OBSConfig = Field(default_factory=OBSConfig)
     field: FieldConfig = Field(default_factory=FieldConfig)
     health: HealthConfig = Field(default_factory=HealthConfig)
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    admin: AdminConfig = Field(default_factory=AdminConfig)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
 
 
