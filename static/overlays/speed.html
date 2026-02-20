@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RatoNet Overlay - Velocidade</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: transparent;
+    font-family: 'JetBrains Mono', monospace;
+    color: #fff;
+  }
+  .container {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 16px 24px;
+    border: 1px solid rgba(255, 102, 0, 0.3);
+  }
+  .speed-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .speed-value {
+    font-size: 48px;
+    font-weight: 700;
+    color: #ff6600;
+    line-height: 1;
+  }
+  .speed-unit {
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.6);
+  }
+  .meta-row {
+    display: flex;
+    gap: 16px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
+  }
+  .meta-row span { white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="speed-row">
+    <span id="speed" class="speed-value">0</span>
+    <span class="speed-unit">km/h</span>
+  </div>
+  <div class="meta-row">
+    <span id="altitude"></span>
+    <span id="heading"></span>
+    <span id="sats"></span>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const STREAMER_ID = params.get('streamer_id') || '';
+const PULL_KEY = params.get('pull_key') || '';
+const API_BASE = window.location.origin;
+const POLL_INTERVAL = 1500;
+
+const $speed = document.getElementById('speed');
+const $alt = document.getElementById('altitude');
+const $heading = document.getElementById('heading');
+const $sats = document.getElementById('sats');
+
+const DIRECTIONS = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO'];
+
+function headingToDir(deg) {
+  const idx = Math.round(deg / 45) % 8;
+  return DIRECTIONS[idx];
+}
+
+async function poll() {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/overlay/data/${STREAMER_ID}?pull_key=${PULL_KEY}`
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.is_live || !data.gps) return;
+
+    const { speed_kmh, altitude_m, heading, satellites } = data.gps;
+    $speed.textContent = Math.round(speed_kmh);
+    $alt.textContent = `ALT ${Math.round(altitude_m)}m`;
+    $heading.textContent = headingToDir(heading);
+    $sats.textContent = `${satellites} SAT`;
+  } catch (e) { /* silencioso */ }
+}
+
+setInterval(poll, POLL_INTERVAL);
+poll();
+</script>
+</body>
+</html>

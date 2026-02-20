@@ -110,7 +110,31 @@ class VPSServer:
         log.info("Health Monitor: inicializado")
 
     async def _start_srt(self) -> None:
-        """Inicializa SRT Receiver."""
+        """Inicializa SRT Receiver (SRTLA ou naive)."""
+        if settings.srtla.enabled:
+            from ratonet.server.srt_receiver import SRTLAReceiver
+            receiver = SRTLAReceiver(
+                listen_port=settings.srtla.rec_port,
+                forward_srt_port=settings.srt.base_port,
+                binary_path=settings.srtla.binary_path,
+                passphrase=settings.srt.passphrase,
+                latency_ms=settings.srt.latency_ms,
+            )
+            started = await receiver.start()
+            if started:
+                self._srt_receiver = receiver
+                log.info("SRTLA Receiver: escutando na porta %d", settings.srtla.rec_port)
+            else:
+                log.warning("SRTLA fallback → SRT receiver naive")
+                await self._start_srt_naive()
+        else:
+            await self._start_srt_naive()
+
+        # Loop de atualização do health com dados do SRT
+        asyncio.create_task(self._srt_health_loop())
+
+    async def _start_srt_naive(self) -> None:
+        """Inicializa SRT Receiver naive (multi-porta)."""
         from ratonet.server.srt_receiver import SRTReceiver
 
         self._srt_receiver = SRTReceiver(
@@ -122,33 +146,33 @@ class VPSServer:
         await self._srt_receiver.start()
         log.info("SRT Receiver: escutando")
 
-        # Loop de atualização do health com dados do SRT
-        asyncio.create_task(self._srt_health_loop())
-
     async def _srt_health_loop(self) -> None:
         """Atualiza health monitor com dados do SRT receiver."""
         while self._running:
             await asyncio.sleep(settings.health.check_interval_s)
             if self._srt_receiver and self._health_monitor:
                 status = self._srt_receiver.get_status()
-                link_scores = [l["score"] for l in status["links"]]
-                active_links = [l for l in status["links"] if l["active"]]
+
+                # SRTLA retorna formato simplificado (sem links individuais)
+                links = status.get("links", [])
+                link_scores = [l.get("score", 0) for l in links]
+                active_links = [l for l in links if l.get("active")]
 
                 avg_rtt = 0.0
                 avg_loss = 0.0
                 total_bitrate = 0.0
                 if active_links:
-                    avg_rtt = sum(l["rtt_ms"] for l in active_links) / len(active_links)
-                    avg_loss = sum(l["packet_loss_pct"] for l in active_links) / len(active_links)
-                    total_bitrate = sum(l["bitrate_kbps"] for l in active_links)
+                    avg_rtt = sum(l.get("rtt_ms", 0) for l in active_links) / len(active_links)
+                    avg_loss = sum(l.get("packet_loss_pct", 0) for l in active_links) / len(active_links)
+                    total_bitrate = sum(l.get("bitrate_kbps", 0) for l in active_links)
 
                 self._health_monitor.update_metrics(
-                    active_links=status["active_links"],
-                    total_links=status["total_links"],
+                    active_links=status.get("active_links", 0),
+                    total_links=status.get("total_links", 0),
                     bitrate_kbps=total_bitrate,
                     rtt_avg_ms=avg_rtt,
                     packet_loss_avg=avg_loss,
-                    link_scores=link_scores,
+                    link_scores=link_scores or [100] if status.get("active") else [0],
                 )
 
     async def _start_relay(self) -> None:

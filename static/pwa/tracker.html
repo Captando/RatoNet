@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#ff6600">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>RatoNet GPS - Tracking</title>
+<link rel="manifest" href="/static/pwa/manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #0f0f0f;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: #888;
+  }
+  .status-dot.tracking { background: #22c55e; animation: pulse 2s infinite; }
+  .status-dot.error { background: #ef4444; }
+  .status-dot.connecting { background: #eab308; animation: pulse 1s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .header-name {
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .btn-logout {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.6);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 24px;
+  }
+  .speed-display {
+    text-align: center;
+  }
+  .speed-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 96px;
+    font-weight: 700;
+    color: #ff6600;
+    line-height: 1;
+  }
+  .speed-unit {
+    font-size: 20px;
+    color: rgba(255,255,255,0.4);
+    margin-top: 4px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    width: 100%;
+    max-width: 360px;
+  }
+  .card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .card-label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .card-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .card-sub {
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    margin-top: 2px;
+  }
+  .status-bar {
+    padding: 12px 20px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 12px;
+    color: rgba(255,255,255,0.4);
+    display: flex;
+    justify-content: space-between;
+  }
+  .toggle-section {
+    width: 100%;
+    max-width: 360px;
+  }
+  .toggle-btn {
+    width: 100%;
+    padding: 16px;
+    border-radius: 14px;
+    border: none;
+    font-size: 18px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .toggle-btn.start {
+    background: #ff6600;
+    color: #fff;
+  }
+  .toggle-btn.stop {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+  .toggle-btn:active { transform: scale(0.98); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div id="statusDot" class="status-dot"></div>
+    <span id="headerName" class="header-name">RatoNet GPS</span>
+  </div>
+  <button class="btn-logout" id="btnLogout">Sair</button>
+</div>
+
+<div class="main">
+  <div class="speed-display">
+    <div id="speed" class="speed-value">0</div>
+    <div class="speed-unit">km/h</div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-label">Altitude</div>
+      <div id="altitude" class="card-value">--</div>
+      <div class="card-sub">metros</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Heading</div>
+      <div id="heading" class="card-value">--</div>
+      <div class="card-sub" id="headingDir"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Latitude</div>
+      <div id="lat" class="card-value" style="font-size:14px">--</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Longitude</div>
+      <div id="lng" class="card-value" style="font-size:14px">--</div>
+    </div>
+  </div>
+
+  <div class="toggle-section">
+    <button id="toggleBtn" class="toggle-btn start">Iniciar Tracking</button>
+  </div>
+</div>
+
+<div class="status-bar">
+  <span id="statusText">Parado</span>
+  <span id="pointCount">0 pontos enviados</span>
+</div>
+
+<script>
+const creds = JSON.parse(localStorage.getItem('ratonet_creds') || 'null');
+if (!creds) {
+  window.location.href = '/pwa/';
+}
+
+const $speed = document.getElementById('speed');
+const $altitude = document.getElementById('altitude');
+const $heading = document.getElementById('heading');
+const $headingDir = document.getElementById('headingDir');
+const $lat = document.getElementById('lat');
+const $lng = document.getElementById('lng');
+const $statusDot = document.getElementById('statusDot');
+const $statusText = document.getElementById('statusText');
+const $pointCount = document.getElementById('pointCount');
+const $toggleBtn = document.getElementById('toggleBtn');
+const $headerName = document.getElementById('headerName');
+
+if (creds) $headerName.textContent = creds.name || 'RatoNet GPS';
+
+const DIRS = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO'];
+let watchId = null;
+let ws = null;
+let pointsSent = 0;
+let tracking = false;
+let wakeLock = null;
+let gpsQueue = [];
+
+// --- GPS Queue (offline support) ---
+function queueGPS(data) {
+  gpsQueue.push(data);
+  if (gpsQueue.length > 1000) gpsQueue.shift(); // limite
+}
+
+async function sendGPS(data) {
+  // Tenta WebSocket primeiro
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'gps',
+      streamer_id: creds.streamerId,
+      data: data,
+    }));
+    pointsSent++;
+    $pointCount.textContent = `${pointsSent} pontos enviados`;
+    return true;
+  }
+
+  // Fallback REST
+  try {
+    const res = await fetch(
+      `${creds.serverUrl}/api/location?streamer_id=${creds.streamerId}&api_key=${encodeURIComponent(creds.apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }
+    );
+    if (res.ok) {
+      pointsSent++;
+      $pointCount.textContent = `${pointsSent} pontos enviados`;
+      return true;
+    }
+  } catch (e) { /* offline */ }
+
+  // Enfileira para envio posterior
+  queueGPS(data);
+  return false;
+}
+
+async function flushQueue() {
+  while (gpsQueue.length > 0) {
+    const data = gpsQueue[0];
+    const sent = await sendGPS(data);
+    if (sent) {
+      gpsQueue.shift();
+    } else {
+      break; // ainda offline
+    }
+  }
+}
+
+// --- WebSocket ---
+function connectWS() {
+  if (!creds) return;
+  const wsProto = creds.serverUrl.startsWith('https') ? 'wss' : 'ws';
+  const host = creds.serverUrl.replace(/^https?:\/\//, '');
+  const url = `${wsProto}://${host}/ws/field/${creds.streamerId}?key=${creds.apiKey}`;
+
+  try {
+    ws = new WebSocket(url);
+    ws.onopen = () => {
+      $statusDot.className = 'status-dot tracking';
+      $statusText.textContent = 'Conectado + Rastreando';
+      flushQueue();
+    };
+    ws.onclose = () => {
+      $statusDot.className = 'status-dot connecting';
+      $statusText.textContent = 'Reconectando...';
+      if (tracking) setTimeout(connectWS, 3000);
+    };
+    ws.onerror = () => ws.close();
+  } catch (e) {
+    if (tracking) setTimeout(connectWS, 3000);
+  }
+}
+
+// --- Geolocation ---
+function onPosition(pos) {
+  const { latitude, longitude, speed, altitude, heading, accuracy } = pos.coords;
+  const speedKmh = speed ? speed * 3.6 : 0;
+  const alt = altitude || 0;
+  const hdg = heading || 0;
+
+  $speed.textContent = Math.round(speedKmh);
+  $altitude.textContent = Math.round(alt);
+  $heading.textContent = `${Math.round(hdg)}°`;
+  $headingDir.textContent = DIRS[Math.round(hdg / 45) % 8];
+  $lat.textContent = latitude.toFixed(6);
+  $lng.textContent = longitude.toFixed(6);
+
+  sendGPS({
+    lat: latitude,
+    lng: longitude,
+    speed_kmh: Math.round(speedKmh * 10) / 10,
+    altitude_m: Math.round(alt),
+    heading: Math.round(hdg),
+    accuracy_m: Math.round(accuracy),
+  });
+}
+
+function onPositionError(err) {
+  $statusText.textContent = `Erro GPS: ${err.message}`;
+  $statusDot.className = 'status-dot error';
+}
+
+// --- Wake Lock ---
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => {
+        if (tracking) requestWakeLock(); // re-acquire
+      });
+    }
+  } catch (e) { /* não suportado ou negado */ }
+}
+
+// --- Toggle tracking ---
+function startTracking() {
+  tracking = true;
+  $toggleBtn.textContent = 'Parar Tracking';
+  $toggleBtn.className = 'toggle-btn stop';
+  $statusDot.className = 'status-dot connecting';
+  $statusText.textContent = 'Iniciando...';
+
+  watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
+    enableHighAccuracy: true,
+    maximumAge: 2000,
+    timeout: 10000,
+  });
+
+  connectWS();
+  requestWakeLock();
+}
+
+function stopTracking() {
+  tracking = false;
+  $toggleBtn.textContent = 'Iniciar Tracking';
+  $toggleBtn.className = 'toggle-btn start';
+  $statusDot.className = 'status-dot';
+  $statusText.textContent = 'Parado';
+
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+  if (wakeLock) {
+    wakeLock.release();
+    wakeLock = null;
+  }
+}
+
+$toggleBtn.addEventListener('click', () => {
+  if (tracking) stopTracking();
+  else startTracking();
+});
+
+document.getElementById('btnLogout').addEventListener('click', () => {
+  stopTracking();
+  localStorage.removeItem('ratonet_creds');
+  window.location.href = '/pwa/';
+});
+
+// Flush queue quando SW pede
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'flush-gps-queue') {
+      flushQueue();
+    }
+  });
+}
+
+// Re-acquire wake lock quando volta ao foco
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && tracking) {
+    requestWakeLock();
+    if (!ws || ws.readyState !== WebSocket.OPEN) connectWS();
+  }
+});
+</script>
+</body>
+</html>

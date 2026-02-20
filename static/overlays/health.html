@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RatoNet Overlay - Saúde da Conexão</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: transparent;
+    font-family: 'JetBrains Mono', monospace;
+    color: #fff;
+  }
+  .container {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 14px 18px;
+    border: 1px solid rgba(255, 102, 0, 0.3);
+    min-width: 220px;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .state {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .state.healthy { color: #22c55e; }
+  .state.degraded { color: #eab308; }
+  .state.critical { color: #ef4444; }
+  .state.down { color: #888; }
+  .score {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .bar-container {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease, background 0.5s ease;
+  }
+  .links {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .link-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .link-dot.active { background: #22c55e; border-color: #22c55e; }
+  .link-dot.inactive { background: #ef4444; border-color: #ef4444; }
+  .meta {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <span id="state" class="state healthy">HEALTHY</span>
+    <span id="score" class="score" style="color:#22c55e">100</span>
+  </div>
+  <div class="bar-container">
+    <div id="bar" class="bar-fill" style="width:100%;background:#22c55e"></div>
+  </div>
+  <div id="links" class="links"></div>
+  <div id="meta" class="meta"></div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const STREAMER_ID = params.get('streamer_id') || '';
+const PULL_KEY = params.get('pull_key') || '';
+const API_BASE = window.location.origin;
+const POLL_INTERVAL = 2000;
+
+const $state = document.getElementById('state');
+const $score = document.getElementById('score');
+const $bar = document.getElementById('bar');
+const $links = document.getElementById('links');
+const $meta = document.getElementById('meta');
+
+function stateColor(state) {
+  switch (state) {
+    case 'healthy': return '#22c55e';
+    case 'degraded': return '#eab308';
+    case 'critical': return '#ef4444';
+    default: return '#888';
+  }
+}
+
+async function poll() {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/overlay/data/${STREAMER_ID}?pull_key=${PULL_KEY}`
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (!data.is_live || !data.health) {
+      $state.textContent = 'OFFLINE';
+      $state.className = 'state down';
+      $score.textContent = '-';
+      $score.style.color = '#888';
+      $bar.style.width = '0%';
+      return;
+    }
+
+    const h = data.health;
+    const color = stateColor(h.state);
+
+    $state.textContent = h.state.toUpperCase();
+    $state.className = `state ${h.state}`;
+    $score.textContent = h.score;
+    $score.style.color = color;
+    $bar.style.width = `${h.score}%`;
+    $bar.style.background = color;
+
+    // Link dots
+    const linkDots = [];
+    const totalLinks = h.total_links || 0;
+    const activeLinks = h.active_links || 0;
+    for (let i = 0; i < totalLinks; i++) {
+      const cls = i < activeLinks ? 'active' : 'inactive';
+      linkDots.push(`<div class="link-dot ${cls}"></div>`);
+    }
+    $links.innerHTML = linkDots.join('');
+
+    // Meta
+    const parts = [];
+    if (h.bitrate_kbps > 0) parts.push(`${Math.round(h.bitrate_kbps)} kbps`);
+    if (activeLinks > 0) parts.push(`${activeLinks}/${totalLinks} links`);
+    $meta.textContent = parts.join(' \u2022 ');
+  } catch (e) { /* silencioso */ }
+}
+
+setInterval(poll, POLL_INTERVAL);
+poll();
+</script>
+</body>
+</html>

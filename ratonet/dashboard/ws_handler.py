@@ -15,6 +15,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from ratonet.common.logger import get_logger
 from ratonet.common.protocol import MessageType, ProtocolMessage
+from ratonet.dashboard.geocoder import reverse_geocode
 from ratonet.dashboard.models import (
     DashboardUpdate,
     GPSPosition,
@@ -127,6 +128,8 @@ class ConnectionManager:
 
         if msg.type == MessageType.GPS:
             streamer.gps = GPSPosition(**msg.data)
+            # Reverse geocoding assíncrono (não bloqueia)
+            asyncio.create_task(self._update_location(streamer_id, streamer.gps))
         elif msg.type == MessageType.HARDWARE:
             streamer.hardware = HardwareMetrics(**msg.data)
         elif msg.type == MessageType.NETWORK:
@@ -142,6 +145,17 @@ class ConnectionManager:
             data={"streamer_id": streamer_id, "streamer": streamer.model_dump(mode="json")},
         )
         await self.broadcast_to_dashboards(update)
+
+
+    async def _update_location(self, streamer_id: str, gps: GPSPosition) -> None:
+        """Atualiza nome do local via reverse geocoding."""
+        try:
+            location = await reverse_geocode(streamer_id, gps.lat, gps.lng)
+            streamer = self.streamers.get(streamer_id)
+            if streamer and location:
+                streamer.location_name = location
+        except Exception:
+            pass  # Silencioso — geocoding é best-effort
 
 
 # Instância global

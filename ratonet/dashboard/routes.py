@@ -7,7 +7,12 @@ from fastapi import APIRouter, HTTPException, Query
 from ratonet.common.logger import get_logger
 from ratonet.config import settings
 from ratonet.dashboard import db
-from ratonet.dashboard.models import ProfileUpdate, RegisterRequest, RegisterResponse
+from datetime import datetime, timezone
+
+from pydantic import BaseModel
+
+from ratonet.dashboard.geocoder import get_cached_location
+from ratonet.dashboard.models import DashboardUpdate, GPSPosition, ProfileUpdate, RegisterRequest, RegisterResponse
 from ratonet.dashboard.ws_handler import manager
 
 log = get_logger("routes")
@@ -41,6 +46,7 @@ async def register_streamer(req: RegisterRequest):
         id=result["id"],
         name=result["name"],
         api_key=result["api_key"],
+        pull_key=result.get("pull_key", ""),
         approved=result["approved"],
         server_url=settings.field.server_ws_url,
         message=msg,
@@ -158,6 +164,102 @@ async def get_streamer(streamer_id: str):
     else:
         result["is_live"] = False
     return result
+
+
+# --- Overlay data (autenticado por pull_key) ---
+
+@router.get("/overlay/data/{streamer_id}")
+async def get_overlay_data(
+    streamer_id: str,
+    pull_key: str = Query(..., description="Pull key (read-only) do streamer"),
+):
+    """Retorna dados para overlays OBS (GPS, health, rede, localização)."""
+    streamer_db = await db.get_streamer_by_pull_key(pull_key, db_path=settings.database.path)
+    if not streamer_db or streamer_db["id"] != streamer_id:
+        raise HTTPException(status_code=401, detail="Pull key inválida")
+
+    live = manager.streamers.get(streamer_id)
+    if not live:
+        return {
+            "is_live": False,
+            "streamer_id": streamer_id,
+            "name": streamer_db["name"],
+        }
+
+    return {
+        "is_live": True,
+        "streamer_id": streamer_id,
+        "name": streamer_db["name"],
+        "gps": live.gps.model_dump(),
+        "hardware": live.hardware.model_dump(),
+        "network_links": [nl.model_dump() for nl in live.network_links],
+        "starlink": live.starlink.model_dump(),
+        "health": live.health.model_dump(),
+        "location_name": get_cached_location(streamer_id) or "",
+        "updated_at": live.updated_at.isoformat(),
+    }
+
+
+# --- Location push (REST fallback para PWA) ---
+
+class LocationPush(BaseModel):
+    lat: float
+    lng: float
+    speed_kmh: float = 0.0
+    altitude_m: float = 0.0
+    heading: float = 0.0
+    accuracy_m: float = 0.0
+
+
+@router.post("/location")
+async def push_location(
+    location: LocationPush,
+    streamer_id: str = Query(...),
+    api_key: str = Query(...),
+):
+    """Push GPS via REST (fallback para quando WebSocket não está disponível)."""
+    streamer_db = await db.get_streamer_by_api_key(api_key, db_path=settings.database.path)
+    if not streamer_db or streamer_db["id"] != streamer_id:
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+    live = manager.streamers.get(streamer_id)
+    if not live:
+        # Cria streamer ao vivo temporário (PWA pode ser a única fonte)
+        from ratonet.dashboard.models import Streamer
+        live = Streamer(
+            id=streamer_db["id"],
+            name=streamer_db["name"],
+            avatar_url=streamer_db.get("avatar_url", ""),
+            color=streamer_db.get("color", "#ff6600"),
+            is_crown=streamer_db.get("is_crown", False),
+            socials=streamer_db.get("socials", []),
+            is_live=True,
+        )
+        manager.streamers[streamer_id] = live
+        # Notifica dashboards
+        update = DashboardUpdate(
+            type="streamer_online",
+            data={"streamer": live.model_dump(mode="json")},
+        )
+        await manager.broadcast_to_dashboards(update)
+
+    live.gps = GPSPosition(
+        lat=location.lat,
+        lng=location.lng,
+        speed_kmh=location.speed_kmh,
+        altitude_m=location.altitude_m,
+        heading=location.heading,
+    )
+    live.updated_at = datetime.now(timezone.utc)
+
+    # Broadcast para dashboards
+    update = DashboardUpdate(
+        type="streamer_update",
+        data={"streamer_id": streamer_id, "streamer": live.model_dump(mode="json")},
+    )
+    await manager.broadcast_to_dashboards(update)
+
+    return {"message": "Localização atualizada", "lat": location.lat, "lng": location.lng}
 
 
 @router.get("/health")

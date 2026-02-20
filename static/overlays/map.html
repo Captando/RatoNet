@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RatoNet Overlay - Mapa</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: transparent; overflow: hidden; }
+  #map {
+    width: 400px;
+    height: 300px;
+    border-radius: 12px;
+    border: 2px solid rgba(255, 102, 0, 0.6);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  .leaflet-control-zoom,
+  .leaflet-control-attribution { display: none !important; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const STREAMER_ID = params.get('streamer_id') || '';
+const PULL_KEY = params.get('pull_key') || '';
+const API_BASE = window.location.origin;
+const POLL_INTERVAL = 2000;
+
+const map = L.map('map', {
+  zoomControl: false,
+  attributionControl: false,
+  dragging: false,
+  scrollWheelZoom: false,
+}).setView([-23.55, -46.63], 15);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 19,
+}).addTo(map);
+
+const marker = L.circleMarker([0, 0], {
+  radius: 8,
+  fillColor: '#ff6600',
+  color: '#fff',
+  weight: 2,
+  fillOpacity: 1,
+}).addTo(map);
+
+const trail = L.polyline([], {
+  color: '#ff6600',
+  weight: 3,
+  opacity: 0.6,
+}).addTo(map);
+
+const trailPoints = [];
+const MAX_TRAIL = 200;
+
+async function poll() {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/overlay/data/${STREAMER_ID}?pull_key=${PULL_KEY}`
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.is_live || !data.gps) return;
+
+    const { lat, lng } = data.gps;
+    if (lat === 0 && lng === 0) return;
+
+    const pos = [lat, lng];
+    marker.setLatLng(pos);
+    map.setView(pos, map.getZoom());
+
+    trailPoints.push(pos);
+    if (trailPoints.length > MAX_TRAIL) trailPoints.shift();
+    trail.setLatLngs(trailPoints);
+  } catch (e) { /* silencioso */ }
+}
+
+setInterval(poll, POLL_INTERVAL);
+poll();
+</script>
+</body>
+</html>

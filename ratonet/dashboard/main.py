@@ -111,6 +111,29 @@ async def serve_index():
     return FileResponse(index_path)
 
 
+@app.get("/pwa")
+@app.get("/pwa/")
+async def serve_pwa_index():
+    """Serve a PWA GPS Tracker."""
+    pwa_index = STATIC_DIR / "static" / "pwa" / "index.html"
+    if pwa_index.exists():
+        return FileResponse(pwa_index)
+    return {"error": "PWA not found"}
+
+
+@app.get("/pwa/{path:path}")
+async def serve_pwa_file(path: str):
+    """Serve arquivos da PWA."""
+    file_path = STATIC_DIR / "static" / "pwa" / path
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(file_path)
+    # SPA fallback — retorna index.html para rotas do frontend
+    pwa_index = STATIC_DIR / "static" / "pwa" / "index.html"
+    if pwa_index.exists():
+        return FileResponse(pwa_index)
+    return {"error": "Not found"}
+
+
 if (STATIC_DIR / "static").exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR / "static"), name="static")
 

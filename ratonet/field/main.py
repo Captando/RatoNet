@@ -170,13 +170,37 @@ class FieldAgent:
         """Inicializa encoder e bonding (se habilitado)."""
         try:
             from ratonet.field.encoder import SRTEncoder
-            from ratonet.field.bonding import NetworkBonding
 
-            self._bonding = NetworkBonding(
-                streamer_id=self.streamer_id,
-                server_host=self.server_url.replace("ws://", "").replace("wss://", "").split(":")[0],
-                base_port=settings.srt.base_port,
-            )
+            server_host = self.server_url.replace("ws://", "").replace("wss://", "").split(":")[0]
+
+            if settings.srtla.enabled:
+                from ratonet.field.bonding import SRTLASender
+                sender = SRTLASender(
+                    listen_port=settings.srtla.send_port,
+                    server_host=server_host,
+                    server_port=settings.srtla.rec_port,
+                    interfaces=settings.field.network_interfaces or None,
+                    binary_path=settings.srtla.binary_path,
+                )
+                started = await sender.start()
+                if started:
+                    self._bonding = sender
+                    log.info("SRTLA bonding ativo")
+                else:
+                    log.warning("SRTLA fallback → bonding naive")
+                    from ratonet.field.bonding import NetworkBonding
+                    self._bonding = NetworkBonding(
+                        streamer_id=self.streamer_id,
+                        server_host=server_host,
+                        base_port=settings.srt.base_port,
+                    )
+            else:
+                from ratonet.field.bonding import NetworkBonding
+                self._bonding = NetworkBonding(
+                    streamer_id=self.streamer_id,
+                    server_host=server_host,
+                    base_port=settings.srt.base_port,
+                )
 
             self._encoder = SRTEncoder(
                 device=settings.field.video_device,

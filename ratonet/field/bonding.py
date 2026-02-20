@@ -9,7 +9,9 @@ A VPS recebe todos e seleciona o melhor baseado na qualidade.
 from __future__ import annotations
 
 import asyncio
+import shutil
 import subprocess
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ratonet.common.logger import get_logger
@@ -195,4 +197,122 @@ class NetworkBonding:
                 }
                 for l in self.links
             ],
+        }
+
+
+class SRTLASender:
+    """Bonding via srtla_send (protocolo BELABOX).
+
+    srtla_send recebe SRT de localhost e distribui pacotes
+    por múltiplas interfaces usando congestion control.
+    Binário: srtla_send <listen_port> <vps_host> <vps_port> [interface ...]
+    """
+
+    def __init__(
+        self,
+        listen_port: int,
+        server_host: str,
+        server_port: int,
+        interfaces: Optional[List[str]] = None,
+        binary_path: str = "",
+    ) -> None:
+        self.listen_port = listen_port
+        self.server_host = server_host
+        self.server_port = server_port
+        self.interfaces = interfaces or []
+        self.binary_path = binary_path
+        self._process: Optional[asyncio.subprocess.Process] = None
+        self._running = False
+
+    def _resolve_binary(self) -> Optional[str]:
+        """Encontra binário srtla_send."""
+        if self.binary_path:
+            p = Path(self.binary_path)
+            return str(p) if p.exists() else None
+        return shutil.which("srtla_send")
+
+    async def start(self) -> bool:
+        """Lança srtla_send. Retorna True se iniciou."""
+        binary = self._resolve_binary()
+        if not binary:
+            log.warning("srtla_send não encontrado — SRTLA desabilitado, usando fallback")
+            return False
+
+        # Auto-detecta interfaces se não forçadas
+        ifaces = self.interfaces
+        if not ifaces:
+            from ratonet.field.network_monitor import detect_interfaces
+            detected = detect_interfaces()
+            ifaces = [d["interface"] for d in detected]
+
+        if not ifaces:
+            log.warning("Nenhuma interface detectada para srtla_send")
+            return False
+
+        cmd = [binary, str(self.listen_port), self.server_host, str(self.server_port)] + ifaces
+        log.info("Iniciando srtla_send: porta %d → %s:%d via %s",
+                 self.listen_port, self.server_host, self.server_port, ", ".join(ifaces))
+
+        self._process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        self._running = True
+        asyncio.create_task(self._log_stderr())
+        asyncio.create_task(self._health_monitor())
+        return True
+
+    async def stop(self) -> None:
+        """Para srtla_send."""
+        self._running = False
+        if self._process:
+            self._process.terminate()
+            try:
+                await asyncio.wait_for(self._process.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                self._process.kill()
+            self._process = None
+        log.info("srtla_send parado")
+
+    def get_primary_srt_url(self) -> str:
+        """Retorna URL SRT que o FFmpeg deve usar como output."""
+        return f"srt://127.0.0.1:{self.listen_port}?mode=caller&latency=500000"
+
+    async def _log_stderr(self) -> None:
+        """Loga stderr do srtla_send."""
+        if not self._process or not self._process.stderr:
+            return
+        try:
+            async for line in self._process.stderr:
+                text = line.decode(errors="replace").strip()
+                if text:
+                    log.debug("[srtla_send] %s", text)
+        except Exception:
+            pass
+
+    async def _health_monitor(self) -> None:
+        """Reinicia srtla_send se morrer inesperadamente."""
+        restart_count = 0
+        while self._running:
+            await asyncio.sleep(3)
+            if self._process and self._process.returncode is not None:
+                if not self._running:
+                    break
+                restart_count += 1
+                if restart_count > 10:
+                    log.error("srtla_send: máximo de restarts excedido")
+                    self._running = False
+                    break
+                log.warning("srtla_send morreu, reiniciando (%d/10)...", restart_count)
+                await asyncio.sleep(2)
+                await self.start()
+
+    def status_summary(self) -> Dict[str, Any]:
+        """Status do srtla_send."""
+        return {
+            "mode": "srtla",
+            "active": self._running and self._process is not None and self._process.returncode is None,
+            "listen_port": self.listen_port,
+            "target": f"{self.server_host}:{self.server_port}",
         }

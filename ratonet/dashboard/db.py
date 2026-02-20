@@ -30,6 +30,7 @@ async def init_db(db_path: str = DB_PATH) -> None:
                 is_crown    INTEGER DEFAULT 0,
                 socials     TEXT DEFAULT '[]',
                 api_key     TEXT UNIQUE NOT NULL,
+                pull_key    TEXT UNIQUE,
                 config      TEXT DEFAULT '{}',
                 approved    INTEGER DEFAULT 0,
                 created_at  TEXT NOT NULL
@@ -43,6 +44,12 @@ async def init_db(db_path: str = DB_PATH) -> None:
                 created_at  TEXT NOT NULL
             );
         """)
+
+        # Migration: gera pull_key para streamers existentes que não têm
+        await db.execute("""
+            UPDATE streamers SET pull_key = 'pk_' || lower(hex(randomblob(16)))
+            WHERE pull_key IS NULL
+        """)
         await db.commit()
     log.info("Banco de dados inicializado: %s", db_path)
 
@@ -50,6 +57,11 @@ async def init_db(db_path: str = DB_PATH) -> None:
 def _generate_api_key() -> str:
     """Gera uma API key segura."""
     return f"rn_{secrets.token_urlsafe(32)}"
+
+
+def _generate_pull_key() -> str:
+    """Gera uma pull key (read-only, para overlays)."""
+    return f"pk_{secrets.token_urlsafe(24)}"
 
 
 def _row_to_dict(row: aiosqlite.Row, columns: List[str]) -> Dict[str, Any]:
@@ -76,7 +88,7 @@ def _row_to_dict(row: aiosqlite.Row, columns: List[str]) -> Dict[str, Any]:
 
 STREAMER_COLUMNS = [
     "id", "name", "email", "avatar_url", "color",
-    "is_crown", "socials", "api_key", "config", "approved", "created_at",
+    "is_crown", "socials", "api_key", "pull_key", "config", "approved", "created_at",
 ]
 
 
@@ -94,15 +106,16 @@ async def create_streamer(
     """Registra novo streamer. Retorna dados incluindo api_key."""
     streamer_id = str(uuid.uuid4())
     api_key = _generate_api_key()
+    pull_key = _generate_pull_key()
     now = datetime.now(timezone.utc).isoformat()
 
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            """INSERT INTO streamers (id, name, email, avatar_url, color, socials, api_key, approved, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO streamers (id, name, email, avatar_url, color, socials, api_key, pull_key, approved, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 streamer_id, name, email, avatar_url, color,
-                json.dumps(socials or []), api_key,
+                json.dumps(socials or []), api_key, pull_key,
                 1 if auto_approve else 0, now,
             ),
         )
@@ -117,6 +130,7 @@ async def create_streamer(
         "color": color,
         "socials": socials or [],
         "api_key": api_key,
+        "pull_key": pull_key,
         "approved": auto_approve,
         "created_at": now,
     }
@@ -143,6 +157,20 @@ async def get_streamer_by_api_key(
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute(
             "SELECT * FROM streamers WHERE api_key = ?", (api_key,)
+        )
+        row = await cursor.fetchone()
+        if row:
+            return _row_to_dict(row, STREAMER_COLUMNS)
+    return None
+
+
+async def get_streamer_by_pull_key(
+    pull_key: str, db_path: str = DB_PATH
+) -> Optional[Dict[str, Any]]:
+    """Busca streamer por pull key (read-only, para overlays)."""
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute(
+            "SELECT * FROM streamers WHERE pull_key = ?", (pull_key,)
         )
         row = await cursor.fetchone()
         if row:

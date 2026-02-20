@@ -90,6 +90,7 @@ class Streamer(BaseModel):
     network_links: List[NetworkLink] = Field(default_factory=list)
     starlink: StarlinkMetrics = Field(default_factory=StarlinkMetrics)
     health: HealthStatus = Field(default_factory=HealthStatus)
+    location_name: str = ""
 
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -118,6 +119,7 @@ class RegisterResponse(BaseModel):
     id: str
     name: str
     api_key: str
+    pull_key: str = ""
     approved: bool
     server_url: str = ""
     message: str = ""

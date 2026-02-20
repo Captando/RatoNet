@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RatoNet Overlay - Localização</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: transparent;
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+  }
+  .container {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(10px);
+    border-radius: 24px;
+    padding: 10px 20px;
+    border: 1px solid rgba(255, 102, 0, 0.3);
+  }
+  .pin {
+    width: 20px;
+    height: 20px;
+    fill: #ff6600;
+    flex-shrink: 0;
+  }
+  .location-text {
+    font-size: 16px;
+    font-weight: 600;
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .offline { color: rgba(255,255,255,0.4); }
+</style>
+</head>
+<body>
+<div class="container">
+  <svg class="pin" viewBox="0 0 24 24">
+    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+  </svg>
+  <span id="location" class="location-text">Carregando...</span>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const STREAMER_ID = params.get('streamer_id') || '';
+const PULL_KEY = params.get('pull_key') || '';
+const API_BASE = window.location.origin;
+const POLL_INTERVAL = 5000;
+
+const $location = document.getElementById('location');
+
+async function poll() {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/overlay/data/${STREAMER_ID}?pull_key=${PULL_KEY}`
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (!data.is_live) {
+      $location.textContent = 'Offline';
+      $location.classList.add('offline');
+      return;
+    }
+
+    $location.classList.remove('offline');
+    if (data.location_name) {
+      $location.textContent = data.location_name;
+    } else if (data.gps && (data.gps.lat !== 0 || data.gps.lng !== 0)) {
+      $location.textContent = `${data.gps.lat.toFixed(4)}, ${data.gps.lng.toFixed(4)}`;
+    } else {
+      $location.textContent = 'Aguardando GPS...';
+    }
+  } catch (e) { /* silencioso */ }
+}
+
+setInterval(poll, POLL_INTERVAL);
+poll();
+</script>
+</body>
+</html>

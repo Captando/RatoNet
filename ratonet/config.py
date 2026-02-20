@@ -86,6 +86,17 @@ class AdminConfig(BaseSettings):
     token: str = Field(default="", description="Token de autenticação do admin (obrigatório em produção)")
 
 
+class SRTLAConfig(BaseSettings):
+    """Configuração do SRTLA (bonding BELABOX)."""
+
+    model_config = {"env_prefix": "SRTLA_"}
+
+    enabled: bool = Field(default=False, description="Usar srtla_send/rec ao invés do bonding naive")
+    send_port: int = Field(default=5000, description="Porta local FFmpeg → srtla_send")
+    rec_port: int = Field(default=5001, description="Porta srtla_rec na VPS")
+    binary_path: str = Field(default="", description="Caminho do binário srtla (vazio = busca no PATH)")
+
+
 class DashboardConfig(BaseSettings):
     """Configuração do dashboard/API."""
 
@@ -108,6 +119,7 @@ class Settings(BaseSettings):
     health: HealthConfig = Field(default_factory=HealthConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     admin: AdminConfig = Field(default_factory=AdminConfig)
+    srtla: SRTLAConfig = Field(default_factory=SRTLAConfig)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
 
 

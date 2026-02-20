@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#ff6600">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>RatoNet GPS Tracker</title>
+<link rel="manifest" href="/static/pwa/manifest.json">
+<link rel="icon" href="/static/pwa/icon-192.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #0f0f0f;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    font-size: 14px;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 32px;
+  }
+  .form {
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  label {
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
+  }
+  input {
+    width: 100%;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    color: #fff;
+    font-size: 15px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input:focus { border-color: #ff6600; }
+  input::placeholder { color: rgba(255,255,255,0.3); }
+  .btn {
+    width: 100%;
+    padding: 14px;
+    background: #ff6600;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: opacity 0.2s;
+  }
+  .btn:active { opacity: 0.8; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .error {
+    color: #ef4444;
+    font-size: 13px;
+    text-align: center;
+    min-height: 20px;
+  }
+  .server-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .server-row input { flex: 1; }
+  .hint {
+    font-size: 12px;
+    color: rgba(255,255,255,0.35);
+    text-align: center;
+    margin-top: 16px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<img src="/static/pwa/icon-192.svg" class="logo" alt="RatoNet">
+<h1>RatoNet GPS</h1>
+<p class="subtitle">Tracker para streamers IRL</p>
+
+<form class="form" id="loginForm">
+  <div>
+    <label>Servidor</label>
+    <input type="url" id="serverUrl" placeholder="https://seu-servidor.com" required>
+  </div>
+  <div>
+    <label>Streamer ID</label>
+    <input type="text" id="streamerId" placeholder="UUID do cadastro" required>
+  </div>
+  <div>
+    <label>API Key</label>
+    <input type="password" id="apiKey" placeholder="rn_..." required>
+  </div>
+  <p class="error" id="error"></p>
+  <button type="submit" class="btn" id="btnLogin">Conectar</button>
+</form>
+
+<p class="hint">
+  Suas credenciais ficam salvas apenas neste dispositivo.<br>
+  Abra via "Adicionar na tela inicial" para melhor experiência.
+</p>
+
+<script>
+// Registra Service Worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/pwa/sw.js').catch(() => {});
+}
+
+const form = document.getElementById('loginForm');
+const $error = document.getElementById('error');
+const $btn = document.getElementById('btnLogin');
+
+// Auto-preenche se já logou antes
+const saved = JSON.parse(localStorage.getItem('ratonet_creds') || 'null');
+if (saved) {
+  document.getElementById('serverUrl').value = saved.serverUrl || '';
+  document.getElementById('streamerId').value = saved.streamerId || '';
+  document.getElementById('apiKey').value = saved.apiKey || '';
+}
+
+// Auto-detecta servidor
+if (!document.getElementById('serverUrl').value) {
+  document.getElementById('serverUrl').value = window.location.origin;
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $error.textContent = '';
+  $btn.disabled = true;
+  $btn.textContent = 'Verificando...';
+
+  const serverUrl = document.getElementById('serverUrl').value.replace(/\/$/, '');
+  const streamerId = document.getElementById('streamerId').value.trim();
+  const apiKey = document.getElementById('apiKey').value.trim();
+
+  try {
+    // Verifica credenciais via /api/me
+    const res = await fetch(`${serverUrl}/api/me?api_key=${encodeURIComponent(apiKey)}`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Credenciais inválidas');
+    }
+    const profile = await res.json();
+    if (profile.id !== streamerId) {
+      throw new Error('Streamer ID não corresponde à API key');
+    }
+
+    // Salva credenciais
+    const creds = { serverUrl, streamerId, apiKey, name: profile.name };
+    localStorage.setItem('ratonet_creds', JSON.stringify(creds));
+
+    // Redireciona para tracker
+    window.location.href = '/pwa/tracker.html';
+  } catch (err) {
+    $error.textContent = err.message;
+    $btn.disabled = false;
+    $btn.textContent = 'Conectar';
+  }
+});
+</script>
+</body>
+</html>

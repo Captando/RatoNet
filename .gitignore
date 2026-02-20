@@ -1,12 +1,16 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 .env
-.venv/
+.env.*
 dist/
 build/
 *.egg-info/
 .idea/
 .vscode/
 .DS_Store
+*.db
+*.db-journal
+*.log

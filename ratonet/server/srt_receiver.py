@@ -194,3 +194,122 @@ class SRTReceiver:
                 for l in self.links
             ],
         }
+
+
+class SRTLAReceiver:
+    """Receptor SRTLA (protocolo BELABOX).
+
+    srtla_rec recebe pacotes bonded de múltiplos IPs fonte,
+    remonta em um stream SRT unificado e encaminha localmente.
+    Binário: srtla_rec <listen_port> <forward_host> <forward_port>
+    """
+
+    def __init__(
+        self,
+        listen_port: int = 5001,
+        forward_srt_port: int = 9000,
+        binary_path: str = "",
+        passphrase: str = "",
+        latency_ms: int = 500,
+    ) -> None:
+        self.listen_port = listen_port
+        self.forward_srt_port = forward_srt_port
+        self.binary_path = binary_path
+        self.passphrase = passphrase
+        self.latency_ms = latency_ms
+        self._rec_process: Optional[asyncio.subprocess.Process] = None
+        self._slt_process: Optional[asyncio.subprocess.Process] = None
+        self._running = False
+        self.active = False
+
+    def _resolve_binary(self) -> Optional[str]:
+        """Encontra binário srtla_rec."""
+        if self.binary_path:
+            return self.binary_path if shutil.which(self.binary_path) or __import__("os").path.isfile(self.binary_path) else None
+        return shutil.which("srtla_rec")
+
+    async def start(self) -> bool:
+        """Lança srtla_rec + srt-live-transmit. Retorna True se iniciou."""
+        binary = self._resolve_binary()
+        if not binary:
+            log.warning("srtla_rec não encontrado — SRTLA receiver desabilitado")
+            return False
+
+        # 1. srtla_rec: recebe UDP bonded, encaminha SRT unificado para localhost
+        cmd_rec = [binary, str(self.listen_port), "127.0.0.1", str(self.forward_srt_port)]
+        log.info("Iniciando srtla_rec: porta %d → 127.0.0.1:%d", self.listen_port, self.forward_srt_port)
+
+        self._rec_process = await asyncio.create_subprocess_exec(
+            *cmd_rec,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        # 2. srt-live-transmit: recebe SRT do srtla_rec e encaminha para relay via UDP
+        if shutil.which("srt-live-transmit"):
+            srt_params = f"mode=listener&latency={self.latency_ms * 1000}"
+            if self.passphrase:
+                srt_params += f"&passphrase={self.passphrase}"
+            srt_url = f"srt://0.0.0.0:{self.forward_srt_port}?{srt_params}"
+            relay_udp = f"udp://127.0.0.1:{self.forward_srt_port + 1000}"
+
+            cmd_slt = ["srt-live-transmit", srt_url, relay_udp, "-v"]
+            log.info("Iniciando srt-live-transmit: %d → UDP %d", self.forward_srt_port, self.forward_srt_port + 1000)
+
+            self._slt_process = await asyncio.create_subprocess_exec(
+                *cmd_slt,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+        self._running = True
+        self.active = True
+        asyncio.create_task(self._monitor())
+        return True
+
+    async def stop(self) -> None:
+        """Para srtla_rec e srt-live-transmit."""
+        self._running = False
+        self.active = False
+        for proc in [self._rec_process, self._slt_process]:
+            if proc:
+                proc.terminate()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    proc.kill()
+        self._rec_process = None
+        self._slt_process = None
+        log.info("SRTLA receiver parado")
+
+    async def _monitor(self) -> None:
+        """Monitora processos e reinicia se necessário."""
+        restart_count = 0
+        while self._running:
+            await asyncio.sleep(3)
+
+            # Verifica srtla_rec
+            if self._rec_process and self._rec_process.returncode is not None:
+                if not self._running:
+                    break
+                restart_count += 1
+                if restart_count > 10:
+                    log.error("srtla_rec: máximo de restarts excedido")
+                    self._running = False
+                    self.active = False
+                    break
+                log.warning("srtla_rec morreu, reiniciando (%d/10)...", restart_count)
+                self.active = False
+                await asyncio.sleep(2)
+                await self.start()
+
+    def get_status(self) -> Dict[str, Any]:
+        """Status do receiver SRTLA."""
+        return {
+            "mode": "srtla",
+            "active": self.active,
+            "listen_port": self.listen_port,
+            "forward_port": self.forward_srt_port,
+            "total_links": 1,
+            "active_links": 1 if self.active else 0,
+        }
