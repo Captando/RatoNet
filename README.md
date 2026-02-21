@@ -91,7 +91,120 @@ Cada overlay é um HTML autocontido, adicionado no OBS como Browser Source.
 
 ---
 
-## Setup Rápido
+## Hardware Recomendado
+
+Guia completo para o streamer montar seu setup IRL solo:
+
+### Encoder (computador de campo)
+
+| Dispositivo | Uso | Observações |
+|---|---|---|
+| **Raspberry Pi 5 (8GB)** | Encoder + telemetria | Leve, barato, roda srtla_send + field agent. Melhor custo-benefício. |
+| **Intel NUC / Mini PC** | Encoding pesado (1080p60) | Mais potência para encoding por hardware (Intel QuickSync) |
+| **Laptop velho** | Alternativa zero custo | Qualquer laptop com Linux funciona |
+
+### Modems / Conectividade
+
+| Dispositivo | Tipo | Observações |
+|---|---|---|
+| **Huawei E3372h** | Modem USB 4G | Barato, plug-and-play no Linux. Use 2-4 unidades com chips de operadoras diferentes. |
+| **Quectel RM520N** | Modem 5G M.2 | Alta performance, precisa de adaptador USB |
+| **GL.iNet Mudi V2 (GL-E750V2)** | Roteador 4G portátil | Tem bateria própria, OpenWrt, bom para setup compacto |
+| **Starlink Mini** | Internet satelital | Backup para áreas sem 4G. ~1kg, alimenta via USB-C PD. |
+| **Peplink MAX BR1** | Roteador bonding | Bonding nativo por hardware (alternativa cara ao SRTLA) |
+
+> **Dica:** Para bonding, use **2-4 chips de operadoras diferentes** (ex: Claro + Vivo + Tim + Oi). O SRTLA distribui pacotes entre todos os links automaticamente.
+
+### GPS
+
+| Dispositivo | Uso | Observações |
+|---|---|---|
+| **u-blox 7/8/9 USB** | GPS dedicado | ~R$30, plug-and-play com gpsd. Precisão de 2-3m. |
+| **Celular com PWA** | GPS via browser | Alternativa sem hardware extra — use a PWA em `/pwa/` |
+
+### Camera / Captura
+
+| Dispositivo | Uso | Observações |
+|---|---|---|
+| **GoPro Hero** | Camera de ação | Saída HDMI limpa (sem OSD), resistente a chuva |
+| **Sony ZV-1 / ZV-E10** | Camera dedicada | Melhor qualidade de imagem, autofoco excelente |
+| **Elgato Cam Link 4K** | Placa de captura USB | HDMI → USB, funciona como webcam no Linux |
+| **Captura genérica USB** | Alternativa barata | ~R$50 no AliExpress, funciona com v4l2 |
+| **Webcam USB** | Alternativa simples | Logitech C920/C922 — sem placa de captura |
+
+### Energia
+
+| Dispositivo | Uso | Observações |
+|---|---|---|
+| **Powerbank 20.000+ mAh** | Alimentação principal | USB-C PD (65W+) para Raspberry Pi + modems |
+| **Powerbank 50.000 mAh** | Longa duração | Para lives de 8+ horas |
+| **Bateria V-Mount** | Setup profissional | 14.4V, mais capacidade, mais pesada |
+
+### Montagem
+
+| Item | Uso |
+|---|---|
+| **Mochila com abertura lateral** | Acomoda encoder + modems + powerbank |
+| **Gimbal DJI RS / Zhiyun** | Estabilização (opcional) |
+| **Tripod de selfie** | Alternativa leve |
+
+### Setup Mínimo (baixo custo)
+
+```
+Raspberry Pi 5 (8GB)       ~R$ 500
+2x Huawei E3372h (4G)      ~R$ 200
+GPS USB u-blox              ~R$  30
+Webcam Logitech C920        ~R$ 300
+Powerbank 20.000mAh PD      ~R$ 150
+Mochila                     ~R$  80
+                     Total: ~R$ 1.260
+```
+
+---
+
+## VPS Recomendada
+
+O servidor VPS precisa de:
+- **IP público** com portas UDP abertas (SRT/SRTLA)
+- **2+ vCPU, 4+ GB RAM** (SRT receiver + FFmpeg relay)
+- **Localização próxima** ao streamer (latência menor = stream mais estável)
+
+Recomendamos a [**Hostinger VPS**](https://hostinger.com.br?REFERRALCODE=BY1GDEV2DDXO) — planos KVM com IP dedicado, bom custo-benefício para IRL streaming:
+
+| Plano | Specs | Uso |
+|---|---|---|
+| **KVM 1** | 1 vCPU, 4GB RAM | 1 streamer, relay simples |
+| **KVM 2** | 2 vCPU, 8GB RAM | Recomendado — múltiplos streamers + SRTLA + relay |
+| **KVM 4** | 4 vCPU, 16GB RAM | Setup profissional com vários destinos RTMP |
+
+### Setup Rápido na VPS
+
+```bash
+# 1. Na VPS (Ubuntu/Debian)
+sudo apt update && sudo apt install -y docker.io docker-compose-plugin git
+
+# 2. Clone o projeto
+git clone https://github.com/Captando/RatoNet.git
+cd RatoNet
+
+# 3. Configure
+cp .env.example .env
+nano .env  # ajuste ADMIN_TOKEN, RTMP_PRIMARY_URL, etc.
+
+# 4. Suba
+docker compose up -d
+
+# 5. Abra as portas no firewall
+sudo ufw allow 8000/tcp   # Dashboard
+sudo ufw allow 9000:9003/udp  # SRT
+sudo ufw allow 5001/udp   # SRTLA
+```
+
+Acesse `http://SEU-IP:8000` para ver o dashboard.
+
+---
+
+## Setup Rápido (Desenvolvimento Local)
 
 ### Requisitos
 - Python 3.9+
@@ -102,11 +215,11 @@ Cada overlay é um HTML autocontido, adicionado no OBS como Browser Source.
 ### Instalação
 
 ```bash
-git clone git@github.com:Captando/RatoNet.git
+git clone https://github.com/Captando/RatoNet.git
 cd RatoNet
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 ### Configuração
@@ -167,6 +280,13 @@ HEALTH_THRESHOLD_DOWN=10
 
 ### Rodando
 
+**Com Docker (recomendado para produção):**
+```bash
+cp .env.example .env
+# edite .env com suas configurações
+docker compose up -d
+```
+
 **Dashboard (desenvolvimento):**
 ```bash
 source venv/bin/activate
@@ -186,6 +306,11 @@ python -m ratonet.field.setup
 
 # Ou direto
 python -m ratonet.field.main --id SEU_UUID --key SUA_API_KEY
+```
+
+**Testes:**
+```bash
+pytest
 ```
 
 ---
@@ -273,8 +398,13 @@ O tracker usa `watchPosition` com alta precisão e mantém a tela ligada via Wak
 ```
 RatoNet/
 ├── index.html                    # Dashboard frontend (mapa + sidebar)
+├── pyproject.toml                # Packaging + entry points CLI
 ├── requirements.txt              # Dependências Python
+├── Dockerfile                    # Container para VPS
+├── docker-compose.yml            # Deploy com Docker Compose
+├── .env.example                  # Template de configuração
 ├── LICENSE                       # MIT
+├── CONTRIBUTING.md               # Guia de contribuição
 │
 ├── ratonet/                      # Backend Python
 │   ├── config.py                 # Configuração centralizada (env vars)
@@ -322,7 +452,12 @@ RatoNet/
 │       ├── icon-192.svg          # Ícone app
 │       └── icon-512.svg          # Ícone app (grande)
 │
-└── tests/                        # Testes
+└── tests/                        # Testes (pytest)
+    ├── test_config.py            # Configuração
+    ├── test_models.py            # Pydantic models
+    ├── test_geocoder.py          # Geocoder + haversine
+    ├── test_db.py                # CRUD SQLite
+    └── test_routes.py            # Endpoints REST
 ```
 
 ---

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ratonet - Transamazônica 2026</title>
+    <title>RatoNet - Streaming IRL</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -162,18 +162,10 @@
             </button>
         </div>
 
-        <!-- Card de Informações da Expedição -->
+        <!-- Card de Status -->
         <div class="ui-interactive bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 rounded-2xl p-4 shadow-xl w-72 mt-2 hidden sm:block">
-            <h1 class="font-display text-ratonet-primary text-sm uppercase tracking-wider mb-1">Transamazônica 2026</h1>
-            <div class="flex items-center gap-2 text-xs text-ratonet-textMuted mb-3">
-                <span>6.250 km</span>
-                <span>&bull;</span>
-                <span>Dia 10</span>
-            </div>
-            <div class="flex items-center text-sm font-medium">
-                <span class="text-white/70 mr-1">Assistindo:</span> 
-                <span class="text-ratonet-primary">15</span>
-            </div>
+            <h1 class="font-display text-ratonet-primary text-sm uppercase tracking-wider mb-1">RatoNet</h1>
+            <p class="text-xs text-ratonet-textMuted" id="status-card-info">Streaming IRL Open Source</p>
         </div>
     </div>
 
@@ -183,8 +175,8 @@
             
             <!-- Cabeçalho Sidebar -->
             <div class="p-6 pb-4 border-b border-white/5">
-                <h2 class="font-display text-ratonet-primary text-lg uppercase tracking-wide">Transamazônica 2026</h2>
-                <p class="text-xs text-ratonet-textMuted mt-1">6 transmitindo &bull; 6 ao vivo</p>
+                <h2 class="font-display text-ratonet-primary text-lg uppercase tracking-wide">RatoNet</h2>
+                <p class="text-xs text-ratonet-textMuted mt-1" id="sidebar-subtitle">Aguardando streamers...</p>
             </div>
 
             <!-- Lista de Streamers -->
@@ -194,13 +186,7 @@
 
             <!-- Rodapé da Sidebar -->
             <div class="p-4 flex flex-col items-end gap-4 mt-auto">
-                <!-- Botão Fila -->
-                <button class="flex items-center gap-2 bg-[#1a1a1a] border border-white/10 hover:border-ratonet-primary/50 text-xs font-medium px-4 py-2 rounded-full transition-all shadow-lg text-white">
-                    <span>🔥 22.630 na fila</span>
-                    <span class="text-ratonet-primary font-bold">#19688</span>
-                </button>
-
-                <!-- Footer Ratonet Solicitado -->
+                <!-- Footer Ratonet -->
                 <div class="w-full pt-4 border-t border-white/5 text-center">
                     <a href="https://ratonet.com.br" target="_blank" rel="noopener noreferrer" class="text-white/30 text-[10px] uppercase tracking-widest hover:text-ratonet-primary transition-colors">
                         Powered by <span class="font-display">RATONET</span>
@@ -282,46 +268,9 @@
         document.getElementById('zoom-in').addEventListener('click', () => map.zoomIn());
         document.getElementById('zoom-out').addEventListener('click', () => map.zoomOut());
 
-        // Waypoints principais simulando a rota SP -> PB -> PA -> AM (Pelas BRs)
-        const routeWaypoints = [
-            [-23.5505, -46.6333], [-19.9208, -43.9378], [-14.8661, -40.8394],
-            [-12.2660, -38.9667], [-7.2307, -35.8811], [-7.0197, -37.2805],
-            [-7.0772, -41.4661], [-5.5185, -47.4777], [-5.3686, -49.0964],
-            [-3.2033, -52.2064], [-4.2761, -55.9836], [-6.2200, -57.7500],
-            [-3.8100, -59.8200]
-        ];
-
-        function generateFakePath(endPoint, index) {
-            const path = [];
-            const offset = index * 0.04;
-
-            for (let i = 0; i < routeWaypoints.length - 1; i++) {
-                const start = routeWaypoints[i];
-                const end = routeWaypoints[i+1];
-                const segments = 15;
-                for (let j = 0; j < segments; j++) {
-                    const fraction = j / segments;
-                    let lat = start[0] + (end[0] - start[0]) * fraction;
-                    let lng = start[1] + (end[1] - start[1]) * fraction;
-                    const noise = Math.sin(fraction * Math.PI) * 0.2;
-                    lat += noise + (Math.random() * 0.06 - 0.03) + offset;
-                    lng -= (noise * 0.3) + offset;
-                    path.push([lat, lng]);
-                }
-            }
-
-            const lastWaypoint = routeWaypoints[routeWaypoints.length - 1];
-            const endSegments = 10;
-            for (let j = 0; j <= endSegments; j++) {
-                const fraction = j / endSegments;
-                let lat = lastWaypoint[0] + (endPoint[0] - lastWaypoint[0]) * fraction;
-                let lng = lastWaypoint[1] + (endPoint[1] - lastWaypoint[1]) * fraction;
-                if (j < endSegments) { lat += offset; lng += offset; }
-                path.push([lat, lng]);
-            }
-
-            return path;
-        }
+        // Trail de posições reais por streamer (acumula GPS ao vivo)
+        const trails = {};  // streamer_id → [latLng, ...]
+        const MAX_TRAIL_POINTS = 500;
 
         const sidebarList = document.getElementById('streamer-list');
         const defaultAvatar = "https://ui-avatars.com/api/?background=random&color=fff&name=";
@@ -340,11 +289,15 @@
             // Limpa sidebar
             sidebarList.innerHTML = '';
 
-            // Atualiza header
+            // Atualiza contadores
             const liveCount = streamerList.filter(s => s.is_live).length;
-            const headerSubtitle = document.querySelector('.ui-layer.top-0.right-0 .text-xs.text-ratonet-textMuted');
-            if (headerSubtitle) {
-                headerSubtitle.textContent = `${streamerList.length} transmitindo • ${liveCount} ao vivo`;
+            const sidebarSub = document.getElementById('sidebar-subtitle');
+            if (sidebarSub) {
+                sidebarSub.textContent = `${streamerList.length} streamer${streamerList.length !== 1 ? 's' : ''} \u2022 ${liveCount} ao vivo`;
+            }
+            const statusCard = document.getElementById('status-card-info');
+            if (statusCard) {
+                statusCard.textContent = `${liveCount} ao vivo`;
             }
 
             streamerList.forEach((streamer, index) => {
@@ -362,19 +315,32 @@
                 else if (healthState === 'down') healthColor = '#6b7280';
 
                 // --- Marcador no mapa ---
+                if (latLng[0] !== 0 || latLng[1] !== 0) {
+                    // Acumula trail real
+                    if (!trails[streamer.id]) trails[streamer.id] = [];
+                    const trail = trails[streamer.id];
+                    const lastPt = trail.length > 0 ? trail[trail.length - 1] : null;
+                    if (!lastPt || lastPt[0] !== latLng[0] || lastPt[1] !== latLng[1]) {
+                        trail.push(latLng);
+                        if (trail.length > MAX_TRAIL_POINTS) trail.shift();
+                    }
+
+                    // Atualiza ou cria polyline
+                    if (polylines[streamer.id]) {
+                        polylines[streamer.id].setLatLngs(trail);
+                    } else {
+                        polylines[streamer.id] = L.polyline(trail, {
+                            color: streamer.color,
+                            weight: 4,
+                            opacity: 0.8,
+                            lineJoin: 'round'
+                        }).addTo(map);
+                    }
+                }
+
                 if (markers[streamer.id]) {
-                    // Atualiza posição do marcador existente (animação suave)
                     markers[streamer.id].setLatLng(latLng);
                 } else {
-                    // Cria rota + marcador pela primeira vez
-                    const pathLatLngs = generateFakePath(latLng, index);
-                    polylines[streamer.id] = L.polyline(pathLatLngs, {
-                        color: streamer.color,
-                        weight: 4,
-                        opacity: 0.8,
-                        lineJoin: 'round'
-                    }).addTo(map);
-
                     const customIcon = L.divIcon({
                         className: '',
                         html: `
@@ -480,6 +446,7 @@
                                 map.removeLayer(polylines[msg.data.streamer_id]);
                                 delete polylines[msg.data.streamer_id];
                             }
+                            delete trails[msg.data.streamer_id];
                             streamers.splice(idx, 1);
                         }
                         renderStreamers(streamers);
@@ -589,15 +556,8 @@
             }
         }, 3000);
 
-        // Ajustar visualização para mostrar o Brasil
-        setTimeout(() => {
-            const bounds = L.latLngBounds([
-                [-23.5505, -46.6333],
-                [-7.2307, -35.8811],
-                [-3.15, -60.15]
-            ]);
-            map.fitBounds(bounds, { padding: [30, 30] });
-        }, 100);
+        // Centraliza no mundo — faz zoom nos streamers quando eles aparecerem
+        map.setView([0, 0], 3);
     </script>
 </body>
 </html>

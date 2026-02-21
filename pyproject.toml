@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ratonet"
+version = "1.0.0"
+description = "Plataforma open-source para streaming IRL com bonding, telemetria e monitoramento em tempo real"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Captando", email = "dev@captando.com.br"},
+]
+keywords = ["irl", "streaming", "srt", "srtla", "bonding", "telemetry", "gps"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "websockets>=12.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "psutil>=5.9",
+    "gpsdclient>=1.3",
+    "obsws-python>=1.7",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "aiosqlite>=0.19",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[project.urls]
+Homepage = "https://github.com/Captando/RatoNet"
+Repository = "https://github.com/Captando/RatoNet"
+Issues = "https://github.com/Captando/RatoNet/issues"
+
+[project.scripts]
+ratonet-server = "ratonet.server.main:main"
+ratonet-field = "ratonet.field.main:main"
+ratonet-dashboard = "ratonet.dashboard.main:main"
+ratonet-field-setup = "ratonet.field.setup:main"
+
+[tool.setuptools.packages.find]
+include = ["ratonet*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

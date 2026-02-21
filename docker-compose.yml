@@ -1,0 +1,14 @@
+services:
+  ratonet:
+    build: .
+    ports:
+      - "8000:8000"
+      - "9000-9003:9000-9003/udp"  # SRT (4 links)
+      - "5001:5001/udp"            # SRTLA receiver
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    environment:
+      - DB_PATH=/app/data/ratonet.db
+      - DASHBOARD_STATIC_DIR=/app
+    restart: unless-stopped

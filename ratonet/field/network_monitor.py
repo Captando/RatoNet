@@ -180,6 +180,8 @@ class NetworkMonitor:
         self.streamer_id = streamer_id
         self.forced_interfaces = interfaces or []
         self.links: List[Dict[str, Any]] = []
+        self._prev_counters: Dict[str, Dict[str, int]] = {}  # iface → {bytes, time}
+
 
     async def scan(self) -> List[Dict[str, str]]:
         """Detecta interfaces disponíveis."""
@@ -207,15 +209,21 @@ class NetworkMonitor:
         """Mede qualidade de um link específico."""
         ping_result = await ping_interface(iface["interface"])
 
-        # Bandwidth estimado via psutil (bytes/s recentes)
+        # Bandwidth via psutil (delta bytes / delta tempo)
+        bandwidth_mbps = 0.0
         try:
             counters = psutil.net_io_counters(pernic=True)
             nic = counters.get(iface["interface"])
-            bandwidth_mbps = 0.0
             if nic:
-                # bytes_sent + bytes_recv dos últimos dados disponíveis
-                # (estimativa grosseira, ideal seria medir delta)
-                bandwidth_mbps = (nic.bytes_sent + nic.bytes_recv) / 1_000_000
+                now = time.time()
+                total_bytes = nic.bytes_sent + nic.bytes_recv
+                prev = self._prev_counters.get(iface["interface"])
+                if prev:
+                    dt = now - prev["time"]
+                    if dt > 0:
+                        delta_bytes = total_bytes - prev["bytes"]
+                        bandwidth_mbps = (delta_bytes * 8) / (dt * 1_000_000)  # Mbps
+                self._prev_counters[iface["interface"]] = {"bytes": total_bytes, "time": now}
         except Exception:
             bandwidth_mbps = 0.0
 

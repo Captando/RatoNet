@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="RatoNet Dashboard",
     description="Plataforma open-source para streaming IRL de alta estabilidade",
-    version="0.2.0",
+    version="1.0.0",
     lifespan=lifespan,
 )
 

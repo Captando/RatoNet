@@ -12,8 +12,8 @@ from pydantic import BaseModel, Field
 # --- GPS ---
 
 class GPSPosition(BaseModel):
-    lat: float
-    lng: float
+    lat: float = 0.0
+    lng: float = 0.0
     speed_kmh: float = 0.0
     altitude_m: float = 0.0
     heading: float = 0.0
