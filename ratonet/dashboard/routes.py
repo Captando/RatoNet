@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import List
+
 from fastapi import APIRouter, HTTPException, Query
 
 from ratonet.common.logger import get_logger
@@ -12,7 +14,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 
 from ratonet.dashboard.geocoder import get_cached_location
-from ratonet.dashboard.models import DashboardUpdate, GPSPosition, ProfileUpdate, RegisterRequest, RegisterResponse
+from ratonet.dashboard.models import DashboardUpdate, GPSPosition, ProfileUpdate, RegisterRequest, RegisterResponse, StreamDestination
 from ratonet.dashboard.ws_handler import manager
 
 log = get_logger("routes")
@@ -112,6 +114,47 @@ async def get_my_field_config(api_key: str = Query(..., description="Sua API key
             f"FIELD_STARLINK_ADDR=192.168.100.1:9200\n"
         ),
     }
+
+
+# --- Stream Destinations ---
+
+def _mask_rtmp_url(url: str) -> str:
+    """Mascara a stream key na URL RTMP."""
+    parts = url.rsplit("/", 1)
+    if len(parts) == 2 and len(parts[1]) > 4:
+        return parts[0] + "/" + parts[1][:4] + "***"
+    return url
+
+
+@router.get("/me/destinations")
+async def get_my_destinations(api_key: str = Query(..., description="Sua API key")):
+    """Lista destinos de stream configurados."""
+    streamer = await _get_current_streamer(api_key)
+    config = streamer.get("config", {})
+    destinations = config.get("stream_destinations", [])
+    # Mascara as URLs RTMP
+    masked = []
+    for dest in destinations:
+        masked.append({
+            "platform": dest.get("platform", "custom"),
+            "rtmp_url": _mask_rtmp_url(dest.get("rtmp_url", "")),
+            "enabled": dest.get("enabled", True),
+        })
+    return {"destinations": masked}
+
+
+@router.put("/me/destinations")
+async def update_my_destinations(
+    destinations: List[StreamDestination],
+    api_key: str = Query(..., description="Sua API key"),
+):
+    """Atualiza lista de destinos de stream (Twitch, YouTube, etc.)."""
+    streamer = await _get_current_streamer(api_key)
+    config = streamer.get("config", {})
+    config["stream_destinations"] = [d.model_dump() for d in destinations]
+    await db.update_streamer(streamer["id"], db_path=settings.database.path, config=config)
+    log.info("Destinations atualizados para %s: %d destinos", streamer["name"], len(destinations))
+    return {"message": "Destinos atualizados", "count": len(destinations)}
 
 
 # --- Streamers públicos ---

@@ -74,6 +74,15 @@ class HealthStatus(BaseModel):
     message: str = ""
 
 
+# --- Stream Destinations ---
+
+class StreamDestination(BaseModel):
+    """Destino RTMP para relay (Twitch, YouTube, Kick, etc.)."""
+    platform: str  # "twitch", "youtube", "kick", "custom"
+    rtmp_url: str  # URL RTMP completa com stream key
+    enabled: bool = True
+
+
 # --- Streamer ---
 
 class Streamer(BaseModel):
@@ -84,6 +93,7 @@ class Streamer(BaseModel):
     is_crown: bool = False
     is_live: bool = False
     socials: List[str] = Field(default_factory=list)
+    stream_destinations: List[StreamDestination] = Field(default_factory=list)
 
     gps: GPSPosition = Field(default_factory=GPSPosition)
     hardware: HardwareMetrics = Field(default_factory=HardwareMetrics)

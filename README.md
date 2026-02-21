@@ -56,10 +56,12 @@ O sistema é dividido em três componentes independentes:
 - Troca automática de cena OBS (LIVE ↔ BRB) via OBS WebSocket
 - Delay configurável para evitar flapping
 
-### RTMP Relay
-- Relay automático do stream SRT para destinos RTMP
-- Suporte a múltiplos destinos simultâneos (Twitch + YouTube)
-- FFmpeg como backend
+### RTMP Relay (Multi-Streamer)
+- **Cada streamer configura suas próprias stream keys** (Twitch, YouTube, Kick, custom)
+- Relay individual por streamer — quando conecta, sobe FFmpeg; quando desconecta, mata
+- Suporte a múltiplos destinos simultâneos por streamer (multistream)
+- URLs RTMP mascaradas na API (segurança das stream keys)
+- Alocação dinâmica de portas SRT por streamer
 
 ### Dashboard Web
 - Mapa full-screen com Leaflet (camada dark CartoDB)
@@ -255,8 +257,9 @@ SRTLA_ENABLED=false
 SRTLA_SEND_PORT=5000
 SRTLA_REC_PORT=5001
 
-# RTMP Relay
-RTMP_PRIMARY_URL=rtmp://live.twitch.tv/app/SUA_STREAM_KEY
+# RTMP Relay (legado — agora cada streamer configura via API)
+# RTMP_PRIMARY_URL e RTMP_SECONDARY_URL são usados apenas como fallback global
+RTMP_PRIMARY_URL=
 RTMP_SECONDARY_URL=
 
 # OBS WebSocket
@@ -328,6 +331,25 @@ curl -X POST http://localhost:8000/api/register \
 
 Retorna `id`, `api_key` (escrita) e `pull_key` (leitura para overlays).
 
+### Configurar Stream Keys
+
+Cada streamer configura seus próprios destinos de stream (Twitch, YouTube, Kick, etc.):
+
+```bash
+# Configurar destinos RTMP
+curl -X PUT "http://localhost:8000/api/me/destinations?api_key=SUA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"platform": "twitch", "rtmp_url": "rtmp://live.twitch.tv/app/live_SUA_KEY", "enabled": true},
+    {"platform": "youtube", "rtmp_url": "rtmp://a.rtmp.youtube.com/live2/SUA_KEY", "enabled": true}
+  ]'
+
+# Verificar destinos configurados (URLs mascaradas)
+curl "http://localhost:8000/api/me/destinations?api_key=SUA_API_KEY"
+```
+
+Quando o field agent conectar, o servidor sobe automaticamente os relays FFmpeg para cada destino habilitado. Ao desconectar, os relays são encerrados.
+
 ### Endpoints Principais
 
 | Método | Endpoint | Auth | Descrição |
@@ -336,6 +358,8 @@ Retorna `id`, `api_key` (escrita) e `pull_key` (leitura para overlays).
 | GET | `/api/me` | api_key | Dados do próprio perfil |
 | PUT | `/api/me` | api_key | Atualizar perfil |
 | GET | `/api/me/config` | api_key | Config pronta para field agent |
+| GET | `/api/me/destinations` | api_key | Lista destinos de stream (URLs mascaradas) |
+| PUT | `/api/me/destinations` | api_key | Configura destinos RTMP (Twitch, YouTube, etc.) |
 | GET | `/api/streamers` | — | Lista streamers ao vivo |
 | GET | `/api/streamers/{id}` | — | Dados de um streamer |
 | GET | `/api/overlay/data/{id}` | pull_key | Dados para overlays OBS |

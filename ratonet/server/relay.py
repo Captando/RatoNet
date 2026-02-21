@@ -190,3 +190,64 @@ class RelayManager:
             manager.add_destination("Secondary", settings.rtmp.secondary_url)
 
         return manager
+
+
+class StreamerRelayManager:
+    """Gerencia relays RTMP individuais por streamer.
+
+    Cada streamer tem seu próprio RelayManager com input SRT dedicado,
+    permitindo multi-streaming independente (cada um com suas keys).
+    """
+
+    def __init__(self) -> None:
+        self.relays: Dict[str, RelayManager] = {}
+
+    async def start_for_streamer(
+        self,
+        streamer_id: str,
+        destinations: List[Dict[str, Any]],
+        srt_port: int,
+    ) -> None:
+        """Sobe relays RTMP para um streamer usando SRT como input."""
+        enabled = [d for d in destinations if d.get("enabled", True)]
+        if not enabled:
+            log.info("[%s] Nenhum destino habilitado — relay não iniciado", streamer_id)
+            return
+
+        input_url = f"srt://127.0.0.1:{srt_port}?mode=listener"
+        mgr = RelayManager(input_url=input_url)
+
+        for dest in enabled:
+            name = dest.get("platform", "custom")
+            rtmp_url = dest.get("rtmp_url", "")
+            if rtmp_url:
+                mgr.add_destination(name, rtmp_url)
+
+        if not mgr.relays:
+            log.warning("[%s] Nenhum destino RTMP válido", streamer_id)
+            return
+
+        await mgr.start_all()
+        self.relays[streamer_id] = mgr
+        log.info("[%s] Relay iniciado: %d destinos (SRT :%d)", streamer_id, len(mgr.relays), srt_port)
+
+    async def stop_for_streamer(self, streamer_id: str) -> None:
+        """Para relays de um streamer."""
+        mgr = self.relays.pop(streamer_id, None)
+        if mgr:
+            await mgr.stop_all()
+            log.info("[%s] Relay parado", streamer_id)
+
+    async def stop_all(self) -> None:
+        """Para relays de todos os streamers."""
+        for sid in list(self.relays.keys()):
+            await self.stop_for_streamer(sid)
+
+    def get_status(self) -> Dict[str, Any]:
+        """Status de todos os relays por streamer."""
+        return {
+            "total_streamers": len(self.relays),
+            "streamers": {
+                sid: mgr.get_status() for sid, mgr in self.relays.items()
+            },
+        }

@@ -17,6 +17,40 @@ from ratonet.config import settings
 log = get_logger("srt_receiver")
 
 
+class PortAllocator:
+    """Aloca portas SRT por streamer (range dinâmico).
+
+    Cada streamer recebe um bloco de portas contíguas para seus links SRT.
+    Ex: streamer 0 → 9000-9003, streamer 1 → 9004-9007, etc.
+    """
+
+    def __init__(self, base_port: int = 9000, ports_per_streamer: int = 4) -> None:
+        self.base_port = base_port
+        self.ports_per_streamer = ports_per_streamer
+        self.allocations: Dict[str, int] = {}  # streamer_id → base_port alocado
+        self._next_slot = 0
+
+    def allocate(self, streamer_id: str) -> int:
+        """Retorna base_port para o streamer (aloca se necessário)."""
+        if streamer_id in self.allocations:
+            return self.allocations[streamer_id]
+        port = self.base_port + (self._next_slot * self.ports_per_streamer)
+        self.allocations[streamer_id] = port
+        self._next_slot += 1
+        log.info("Porta SRT alocada para %s: %d-%d", streamer_id[:8], port, port + self.ports_per_streamer - 1)
+        return port
+
+    def release(self, streamer_id: str) -> None:
+        """Libera portas de um streamer."""
+        released = self.allocations.pop(streamer_id, None)
+        if released is not None:
+            log.info("Porta SRT liberada para %s: %d", streamer_id[:8], released)
+
+    def get_port(self, streamer_id: str) -> Optional[int]:
+        """Retorna porta alocada (ou None se não alocada)."""
+        return self.allocations.get(streamer_id)
+
+
 class SRTLink:
     """Representa um link SRT receptor individual."""
 

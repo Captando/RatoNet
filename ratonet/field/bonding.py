@@ -30,12 +30,14 @@ class BondedLink:
         server_host: str,
         srt_port: int,
         latency_ms: int = 500,
+        streamer_id: str = "",
     ) -> None:
         self.interface = interface
         self.iface_type = iface_type
         self.server_host = server_host
         self.srt_port = srt_port
         self.latency_ms = latency_ms
+        self.streamer_id = streamer_id
 
         self.active = False
         self.score = 0
@@ -46,12 +48,15 @@ class BondedLink:
         """URL SRT para este link."""
         return f"{self.server_host}:{self.srt_port}"
 
-    def srt_url_with_params(self) -> str:
+    def srt_url_with_params(self, streamer_id: str = "") -> str:
         """URL SRT completa com parâmetros."""
-        return (
+        url = (
             f"srt://{self.server_host}:{self.srt_port}"
             f"?mode=caller&latency={self.latency_ms * 1000}"
         )
+        if streamer_id:
+            url += f"&streamid={streamer_id}"
+        return url
 
     async def start_relay(self, input_pipe: str) -> None:
         """Inicia srt-live-transmit para este link.
@@ -61,7 +66,7 @@ class BondedLink:
         cmd = [
             "srt-live-transmit",
             f"udp://:{input_pipe}",
-            self.srt_url_with_params(),
+            self.srt_url_with_params(self.streamer_id),
             "-v",
         ]
 
@@ -129,6 +134,7 @@ class NetworkBonding:
                 server_host=self.server_host,
                 srt_port=self.base_port + idx,
                 latency_ms=self.latency_ms,
+                streamer_id=self.streamer_id,
             )
             self.links.append(link)
 

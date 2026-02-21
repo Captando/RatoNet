@@ -102,3 +102,49 @@ async def test_health(client):
     resp = await client.get("/api/health")
     assert resp.status_code == 200
     assert isinstance(resp.json(), dict)
+
+
+@pytest.mark.asyncio
+async def test_destinations_crud(client):
+    """Fluxo completo: registro → set destinations → get destinations."""
+    settings.database.auto_approve = True
+
+    # Registro
+    resp = await client.post("/api/register", json={
+        "name": "Relay Streamer", "email": "relay@test.com",
+    })
+    api_key = resp.json()["api_key"]
+
+    # Inicialmente sem destinos
+    resp = await client.get(f"/api/me/destinations?api_key={api_key}")
+    assert resp.status_code == 200
+    assert resp.json()["destinations"] == []
+
+    # Configura destinos
+    resp = await client.put(
+        f"/api/me/destinations?api_key={api_key}",
+        json=[
+            {"platform": "twitch", "rtmp_url": "rtmp://live.twitch.tv/app/live_123456789", "enabled": True},
+            {"platform": "youtube", "rtmp_url": "rtmp://a.rtmp.youtube.com/live2/abcd-efgh", "enabled": False},
+        ],
+    )
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 2
+
+    # Verifica destinos (URLs mascaradas)
+    resp = await client.get(f"/api/me/destinations?api_key={api_key}")
+    assert resp.status_code == 200
+    dests = resp.json()["destinations"]
+    assert len(dests) == 2
+    assert dests[0]["platform"] == "twitch"
+    assert "***" in dests[0]["rtmp_url"]  # URL mascarada
+    assert dests[1]["enabled"] is False
+
+    settings.database.auto_approve = False
+
+
+@pytest.mark.asyncio
+async def test_destinations_invalid_key(client):
+    """Destinos com API key inválida retorna 401."""
+    resp = await client.get("/api/me/destinations?api_key=invalid")
+    assert resp.status_code == 401

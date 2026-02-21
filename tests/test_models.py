@@ -8,6 +8,7 @@ from ratonet.dashboard.models import (
     NetworkLink,
     RegisterRequest,
     RegisterResponse,
+    StreamDestination,
     Streamer,
 )
 
@@ -69,3 +70,26 @@ def test_network_link():
     link = NetworkLink(interface="eth0", type="ethernet", connected=True, score=85)
     assert link.score == 85
     assert link.connected is True
+
+
+def test_stream_destination():
+    """StreamDestination cria com defaults corretos."""
+    dest = StreamDestination(platform="twitch", rtmp_url="rtmp://live.twitch.tv/app/key123")
+    assert dest.platform == "twitch"
+    assert dest.enabled is True
+    data = dest.model_dump()
+    assert data["rtmp_url"] == "rtmp://live.twitch.tv/app/key123"
+
+
+def test_streamer_with_destinations():
+    """Streamer aceita stream_destinations."""
+    s = Streamer(
+        id="test-id",
+        name="Test",
+        stream_destinations=[
+            StreamDestination(platform="twitch", rtmp_url="rtmp://tw/key"),
+            StreamDestination(platform="youtube", rtmp_url="rtmp://yt/key", enabled=False),
+        ],
+    )
+    assert len(s.stream_destinations) == 2
+    assert s.stream_destinations[1].enabled is False

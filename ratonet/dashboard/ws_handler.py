@@ -25,6 +25,8 @@ from ratonet.dashboard.models import (
     StarlinkMetrics,
     Streamer,
 )
+from ratonet.server.relay import StreamerRelayManager
+from ratonet.server.srt_receiver import PortAllocator
 
 log = get_logger("ws")
 
@@ -36,6 +38,8 @@ class ConnectionManager:
         self.dashboard_clients: List[WebSocket] = []
         self.field_agents: Dict[str, WebSocket] = {}  # streamer_id → ws
         self.streamers: Dict[str, Streamer] = {}  # streamers ao vivo (populado dinamicamente)
+        self.streamer_relay: StreamerRelayManager = StreamerRelayManager()
+        self.port_allocator: PortAllocator = PortAllocator()
 
     # --- Dashboard (browsers) ---
 
@@ -89,6 +93,13 @@ class ConnectionManager:
 
         log.info("Field agent conectado: %s (%s)", streamer_data["name"], streamer_id)
 
+        # Sobe relay RTMP se tem destinos configurados
+        config = streamer_data.get("config", {})
+        destinations = config.get("stream_destinations", [])
+        if destinations:
+            srt_port = self.port_allocator.allocate(streamer_id)
+            await self.streamer_relay.start_for_streamer(streamer_id, destinations, srt_port)
+
         # Notifica dashboards
         update = DashboardUpdate(
             type="streamer_online",
@@ -102,6 +113,10 @@ class ConnectionManager:
         removed = self.streamers.pop(streamer_id, None)
         name = removed.name if removed else streamer_id
         log.info("Field agent desconectado: %s (%s)", name, streamer_id)
+
+        # Para relay RTMP do streamer
+        asyncio.create_task(self.streamer_relay.stop_for_streamer(streamer_id))
+        self.port_allocator.release(streamer_id)
 
         # Notifica dashboards
         update = DashboardUpdate(
