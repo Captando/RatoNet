@@ -333,6 +333,131 @@ pytest
 
 ---
 
+## Setup do Raspberry Pi (Field Agent)
+
+Guia passo a passo para instalar o RatoNet no Raspberry Pi (ou qualquer Linux) que vai no campo com o streamer.
+
+### 1. Preparar o Raspberry Pi
+
+```bash
+# Atualiza o sistema
+sudo apt update && sudo apt upgrade -y
+
+# Instala dependências
+sudo apt install -y python3 python3-venv python3-pip git ffmpeg gpsd gpsd-clients
+
+# (Opcional) Instala SRT tools para bonding
+sudo apt install -y srt-tools
+```
+
+### 2. Instalar o RatoNet
+
+```bash
+git clone https://github.com/Captando/RatoNet.git
+cd RatoNet
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+```
+
+### 3. Cadastrar na plataforma
+
+**Opção A — Setup wizard interativo (recomendado):**
+```bash
+python -m ratonet.field.setup
+```
+
+O wizard vai:
+1. Pedir a URL do servidor (ex: `ws://seu-servidor:8000/ws/field`)
+2. Cadastrar você automaticamente ou usar ID/key existentes
+3. Detectar interfaces de rede (modems 4G, Wi-Fi, Ethernet)
+4. Testar conectividade de cada interface
+5. Gerar o `.env` pronto para uso
+
+**Opção B — Cadastro manual via API:**
+```bash
+# Cadastra no servidor
+curl -X POST http://SEU-SERVIDOR:8000/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Meu Nome", "email": "email@exemplo.com"}'
+
+# Anote o id, api_key e pull_key retornados
+```
+
+> **Importante:** Se `DB_AUTO_APPROVE=false` (padrão), o admin precisa aprovar seu cadastro em `/admin/` antes de você conseguir conectar.
+
+### 4. Configurar stream keys (no painel web)
+
+Acesse `http://SEU-SERVIDOR:8000/panel/`, faça login com sua API key e configure:
+- **Stream Keys** — Adicione seus destinos RTMP (Twitch, YouTube, Kick)
+- **LivePix** — Configure o token para alertas de doação (opcional)
+- **Overlays** — Copie as URLs dos overlays para o OBS
+
+### 5. Iniciar o Field Agent
+
+```bash
+cd RatoNet
+source venv/bin/activate
+
+# Modo básico (só telemetria GPS + hardware + rede)
+python -m ratonet.field.main --id SEU_UUID --key SUA_API_KEY
+
+# Com vídeo (FFmpeg + SRT bonding para a VPS)
+python -m ratonet.field.main --id SEU_UUID --key SUA_API_KEY --video
+```
+
+### 6. Rodar como serviço (auto-start no boot)
+
+```bash
+sudo tee /etc/systemd/system/ratonet-field.service > /dev/null << 'EOF'
+[Unit]
+Description=RatoNet Field Agent
+After=network-online.target gpsd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/RatoNet
+Environment=PATH=/home/pi/RatoNet/venv/bin:/usr/bin:/bin
+ExecStart=/home/pi/RatoNet/venv/bin/python -m ratonet.field.main --id SEU_UUID --key SUA_API_KEY --video
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Ativa e inicia
+sudo systemctl daemon-reload
+sudo systemctl enable ratonet-field
+sudo systemctl start ratonet-field
+
+# Ver logs
+journalctl -u ratonet-field -f
+```
+
+### 7. Configurar GPS (opcional)
+
+Se tiver um receptor GPS USB (u-blox):
+
+```bash
+# Conecta o GPS USB e verifica
+ls /dev/ttyACM*  # ou /dev/ttyUSB*
+
+# Configura o gpsd
+sudo dpkg-reconfigure gpsd
+# Device: /dev/ttyACM0
+# Start gpsd automatically: Yes
+
+# Testa
+cgps -s  # deve mostrar coordenadas após fix
+```
+
+Se não tiver GPS USB, use a **PWA GPS Tracker** no celular: acesse `http://SEU-SERVIDOR:8000/pwa/` e inicie o tracking.
+
+---
+
 ## API
 
 ### Registro
