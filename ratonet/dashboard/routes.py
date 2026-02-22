@@ -157,6 +157,42 @@ async def update_my_destinations(
     return {"message": "Destinos atualizados", "count": len(destinations)}
 
 
+@router.get("/me/destinations/full")
+async def get_my_destinations_full(api_key: str = Query(..., description="Sua API key")):
+    """Lista destinos de stream SEM mascarar (para o painel do streamer editar)."""
+    streamer = await _get_current_streamer(api_key)
+    config = streamer.get("config", {})
+    destinations = config.get("stream_destinations", [])
+    return {"destinations": destinations}
+
+
+# --- LivePix ---
+
+class LivePixToken(BaseModel):
+    token: str
+
+
+@router.get("/me/livepix")
+async def get_my_livepix(api_key: str = Query(..., description="Sua API key")):
+    """Retorna token LivePix configurado."""
+    streamer = await _get_current_streamer(api_key)
+    config = streamer.get("config", {})
+    return {"token": config.get("livepix_token", "")}
+
+
+@router.put("/me/livepix")
+async def update_my_livepix(
+    data: LivePixToken,
+    api_key: str = Query(..., description="Sua API key"),
+):
+    """Salva token LivePix no config."""
+    streamer = await _get_current_streamer(api_key)
+    config = streamer.get("config", {})
+    config["livepix_token"] = data.token
+    await db.update_streamer(streamer["id"], db_path=settings.database.path, config=config)
+    return {"message": "Token LivePix salvo"}
+
+
 # --- Streamers públicos ---
 
 @router.get("/streamers")
@@ -221,12 +257,16 @@ async def get_overlay_data(
     if not streamer_db or streamer_db["id"] != streamer_id:
         raise HTTPException(status_code=401, detail="Pull key inválida")
 
+    config = streamer_db.get("config", {})
+    livepix_token = config.get("livepix_token", "")
+
     live = manager.streamers.get(streamer_id)
     if not live:
         return {
             "is_live": False,
             "streamer_id": streamer_id,
             "name": streamer_db["name"],
+            "livepix_token": livepix_token,
         }
 
     return {
@@ -239,6 +279,7 @@ async def get_overlay_data(
         "starlink": live.starlink.model_dump(),
         "health": live.health.model_dump(),
         "location_name": get_cached_location(streamer_id) or "",
+        "livepix_token": livepix_token,
         "updated_at": live.updated_at.isoformat(),
     }
 

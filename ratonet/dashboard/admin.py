@@ -96,3 +96,28 @@ async def remove_streamer(
     await db.delete_streamer(streamer_id, db_path=settings.database.path)
     log.info("Streamer removido: %s (%s)", streamer["name"], streamer_id)
     return {"message": "Streamer removido", "name": streamer["name"]}
+
+
+@admin_router.get("/stats")
+async def get_admin_stats(admin: None = Depends(_verify_admin_token)):
+    """Retorna estatísticas detalhadas do sistema."""
+    all_streamers = await db.list_streamers(approved_only=False, db_path=settings.database.path)
+    approved = [s for s in all_streamers if s["approved"]]
+
+    online_list = []
+    for sid, streamer in manager.streamers.items():
+        online_list.append({
+            "id": sid,
+            "name": streamer.name,
+            "health_score": streamer.health.score,
+            "health_state": streamer.health.state.value,
+        })
+
+    return {
+        "registered": len(all_streamers),
+        "approved": len(approved),
+        "online": len(manager.streamers),
+        "dashboards": len(manager.dashboard_clients),
+        "field_agents": len(manager.field_agents),
+        "online_streamers": online_list,
+    }

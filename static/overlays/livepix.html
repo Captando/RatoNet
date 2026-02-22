@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RatoNet - LivePix Overlay</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: transparent; font-family: 'Inter', sans-serif; overflow: hidden; }
+
+.alert-container {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 420px;
+  max-width: 95vw;
+}
+
+.alert {
+  background: linear-gradient(135deg, rgba(20, 20, 20, 0.95), rgba(30, 30, 30, 0.95));
+  border: 2px solid #ff6600;
+  border-radius: 16px;
+  padding: 20px 24px;
+  box-shadow: 0 0 30px rgba(255, 102, 0, 0.3), 0 8px 32px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transform: translateY(30px) scale(0.95);
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.alert.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.alert.hide {
+  opacity: 0;
+  transform: translateY(-20px) scale(0.95);
+  transition: all 0.3s ease-in;
+}
+
+.alert-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.alert-icon {
+  width: 32px;
+  height: 32px;
+  background: #ff6600;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.alert-sender {
+  font-weight: 700;
+  font-size: 16px;
+  color: #ff6600;
+  flex: 1;
+}
+
+.alert-amount {
+  font-weight: 700;
+  font-size: 20px;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 102, 0, 0.5);
+}
+
+.alert-message {
+  color: #e0e0e0;
+  font-size: 14px;
+  line-height: 1.4;
+  margin-top: 4px;
+  word-wrap: break-word;
+}
+
+.alert-bar {
+  height: 3px;
+  background: linear-gradient(90deg, #ff6600, #ff8833);
+  border-radius: 2px;
+  margin-top: 12px;
+  animation: shrink 6s linear forwards;
+}
+
+@keyframes shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+</style>
+</head>
+<body>
+<div class="alert-container">
+  <div id="alert" class="alert">
+    <div class="alert-header">
+      <div class="alert-icon">&#x2764;</div>
+      <span id="alert-sender" class="alert-sender"></span>
+      <span id="alert-amount" class="alert-amount"></span>
+    </div>
+    <p id="alert-message" class="alert-message"></p>
+    <div id="alert-bar" class="alert-bar"></div>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const streamerId = params.get('streamer_id');
+const pullKey = params.get('pull_key');
+
+let livepixToken = '';
+let livepixWs = null;
+let alertQueue = [];
+let showing = false;
+
+// Fetch token from overlay API
+async function fetchToken() {
+  if (!streamerId || !pullKey) return;
+  try {
+    const r = await fetch(`/api/overlay/data/${streamerId}?pull_key=${pullKey}`);
+    if (r.ok) {
+      const data = await r.json();
+      const newToken = data.livepix_token || '';
+      if (newToken !== livepixToken) {
+        livepixToken = newToken;
+        connectLivePix();
+      }
+    }
+  } catch {}
+}
+
+// Connect to LivePix WebSocket
+function connectLivePix() {
+  if (livepixWs) { livepixWs.close(); livepixWs = null; }
+  if (!livepixToken) return;
+
+  livepixWs = new WebSocket(`wss://ws.livepix.gg/events?token=${livepixToken}`);
+
+  livepixWs.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      // LivePix event format
+      if (data.event === 'donation' || data.type === 'donation') {
+        const donation = data.data || data;
+        alertQueue.push({
+          sender: donation.sender || donation.name || 'Anonimo',
+          amount: formatAmount(donation.amount || donation.value || 0),
+          message: donation.message || donation.msg || '',
+        });
+        processQueue();
+      }
+    } catch {}
+  };
+
+  livepixWs.onclose = () => {
+    if (livepixToken) setTimeout(connectLivePix, 5000);
+  };
+
+  livepixWs.onerror = () => livepixWs.close();
+}
+
+function formatAmount(value) {
+  const num = parseFloat(value);
+  if (isNaN(num)) return `R$ ${value}`;
+  return `R$ ${num.toFixed(2).replace('.', ',')}`;
+}
+
+function processQueue() {
+  if (showing || alertQueue.length === 0) return;
+  showing = true;
+  const item = alertQueue.shift();
+  showAlert(item.sender, item.amount, item.message);
+}
+
+function showAlert(sender, amount, message) {
+  const el = document.getElementById('alert');
+  document.getElementById('alert-sender').textContent = sender;
+  document.getElementById('alert-amount').textContent = amount;
+  document.getElementById('alert-message').textContent = message;
+
+  // Reset bar animation
+  const bar = document.getElementById('alert-bar');
+  bar.style.animation = 'none';
+  bar.offsetHeight; // Force reflow
+  bar.style.animation = 'shrink 6s linear forwards';
+
+  el.classList.remove('hide');
+  el.classList.add('show');
+
+  setTimeout(() => {
+    el.classList.remove('show');
+    el.classList.add('hide');
+    setTimeout(() => {
+      showing = false;
+      processQueue();
+    }, 400);
+  }, 6000);
+}
+
+// Init
+fetchToken();
+setInterval(fetchToken, 300000); // Re-fetch every 5 min
+
+// Test mode: ?test=1 shows a sample alert
+if (params.get('test') === '1') {
+  setTimeout(() => {
+    alertQueue.push({ sender: 'Teste', amount: 'R$ 10,00', message: 'Isso e um alerta de teste do LivePix!' });
+    processQueue();
+  }, 1000);
+}
+</script>
+</body>
+</html>

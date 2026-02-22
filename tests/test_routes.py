@@ -148,3 +148,72 @@ async def test_destinations_invalid_key(client):
     """Destinos com API key inválida retorna 401."""
     resp = await client.get("/api/me/destinations?api_key=invalid")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_destinations_full(client):
+    """GET /api/me/destinations/full retorna URLs sem mascarar."""
+    settings.database.auto_approve = True
+    resp = await client.post("/api/register", json={"name": "Full", "email": "full@test.com"})
+    api_key = resp.json()["api_key"]
+
+    # Configura destino
+    await client.put(
+        f"/api/me/destinations?api_key={api_key}",
+        json=[{"platform": "twitch", "rtmp_url": "rtmp://live.twitch.tv/app/live_SECRETKEY123", "enabled": True}],
+    )
+
+    # Full retorna URL completa (sem mascarar)
+    resp = await client.get(f"/api/me/destinations/full?api_key={api_key}")
+    assert resp.status_code == 200
+    dests = resp.json()["destinations"]
+    assert "SECRETKEY123" in dests[0]["rtmp_url"]
+
+    settings.database.auto_approve = False
+
+
+@pytest.mark.asyncio
+async def test_livepix_crud(client):
+    """Fluxo LivePix: salvar e ler token."""
+    settings.database.auto_approve = True
+    resp = await client.post("/api/register", json={"name": "LP", "email": "lp@test.com"})
+    api_key = resp.json()["api_key"]
+
+    # Sem token inicialmente
+    resp = await client.get(f"/api/me/livepix?api_key={api_key}")
+    assert resp.status_code == 200
+    assert resp.json()["token"] == ""
+
+    # Salva token
+    resp = await client.put(
+        f"/api/me/livepix?api_key={api_key}",
+        json={"token": "my_livepix_token_123"},
+    )
+    assert resp.status_code == 200
+
+    # Le token
+    resp = await client.get(f"/api/me/livepix?api_key={api_key}")
+    assert resp.json()["token"] == "my_livepix_token_123"
+
+    settings.database.auto_approve = False
+
+
+@pytest.mark.asyncio
+async def test_admin_stats(client):
+    """GET /api/admin/stats retorna estatisticas."""
+    settings.admin.token = "test_admin_token"
+    settings.database.auto_approve = True
+
+    await client.post("/api/register", json={"name": "Stats", "email": "stats@test.com"})
+
+    resp = await client.get(
+        "/api/admin/stats",
+        headers={"Authorization": "Bearer test_admin_token"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["registered"] == 1
+    assert "online_streamers" in data
+
+    settings.admin.token = ""
+    settings.database.auto_approve = False

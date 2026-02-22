@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RatoNet - Painel do Streamer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: { extend: { colors: { rato: '#ff6600', dark: '#0a0a0a', card: '#141414', border: '#2a2a2a' }, fontFamily: { sans: ['Inter', 'sans-serif'] } } }
+}
+</script>
+<style>
+  body { background: #0a0a0a; }
+  .tab-active { border-color: #ff6600; color: #ff6600; }
+  .toast { animation: slideIn .3s ease; }
+  @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+</style>
+</head>
+<body class="font-sans text-gray-200 min-h-screen">
+
+<!-- Login Screen -->
+<div id="login-screen" class="flex items-center justify-center min-h-screen px-4">
+  <div class="bg-card border border-border rounded-xl p-8 w-full max-w-md">
+    <div class="text-center mb-6">
+      <h1 class="text-2xl font-bold text-rato">RatoNet</h1>
+      <p class="text-gray-400 text-sm mt-1">Painel do Streamer</p>
+    </div>
+    <div>
+      <label class="block text-sm text-gray-400 mb-2">Sua API Key</label>
+      <input id="login-key" type="password" placeholder="rn_..." class="w-full bg-dark border border-border rounded-lg px-4 py-3 text-white focus:border-rato focus:outline-none">
+      <button onclick="doLogin()" class="w-full mt-4 bg-rato hover:bg-orange-600 text-white font-semibold py-3 rounded-lg transition">Entrar</button>
+      <p id="login-error" class="text-red-400 text-sm mt-2 hidden"></p>
+    </div>
+  </div>
+</div>
+
+<!-- Panel -->
+<div id="panel" class="hidden">
+  <!-- Header -->
+  <header class="bg-card border-b border-border px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+    <div class="flex items-center gap-3">
+      <span class="text-rato font-bold text-lg">RatoNet</span>
+      <span id="hdr-name" class="text-gray-400 text-sm hidden md:inline"></span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="hdr-status" class="text-xs px-2 py-1 rounded-full"></span>
+      <button onclick="doLogout()" class="text-gray-500 hover:text-gray-300 text-sm"><i class="fas fa-sign-out-alt"></i> Sair</button>
+    </div>
+  </header>
+
+  <!-- Tabs -->
+  <nav class="bg-card border-b border-border overflow-x-auto">
+    <div class="flex px-4 gap-1 min-w-max">
+      <button onclick="switchTab('dashboard')" data-tab="dashboard" class="tab-btn px-4 py-3 text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition whitespace-nowrap"><i class="fas fa-home mr-1"></i> Dashboard</button>
+      <button onclick="switchTab('profile')" data-tab="profile" class="tab-btn px-4 py-3 text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition whitespace-nowrap"><i class="fas fa-user mr-1"></i> Perfil</button>
+      <button onclick="switchTab('keys')" data-tab="keys" class="tab-btn px-4 py-3 text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition whitespace-nowrap"><i class="fas fa-key mr-1"></i> Stream Keys</button>
+      <button onclick="switchTab('overlays')" data-tab="overlays" class="tab-btn px-4 py-3 text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition whitespace-nowrap"><i class="fas fa-layer-group mr-1"></i> Overlays</button>
+      <button onclick="switchTab('livepix')" data-tab="livepix" class="tab-btn px-4 py-3 text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition whitespace-nowrap"><i class="fas fa-heart mr-1"></i> LivePix</button>
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <main class="max-w-4xl mx-auto px-4 py-6">
+    <!-- Tab: Dashboard -->
+    <div id="tab-dashboard" class="tab-content">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="bg-card border border-border rounded-xl p-5 flex items-center gap-4">
+          <img id="dash-avatar" src="" class="w-14 h-14 rounded-full bg-dark border-2" style="border-color: var(--color, #ff6600)">
+          <div>
+            <h3 id="dash-name" class="font-semibold text-white"></h3>
+            <span id="dash-live" class="text-xs px-2 py-0.5 rounded-full"></span>
+          </div>
+        </div>
+        <div class="bg-card border border-border rounded-xl p-5">
+          <p class="text-gray-500 text-xs mb-1">Health Score</p>
+          <p id="dash-health" class="text-3xl font-bold text-rato">--</p>
+        </div>
+        <div class="bg-card border border-border rounded-xl p-5">
+          <p class="text-gray-500 text-xs mb-1">GPS</p>
+          <p id="dash-gps" class="text-sm text-gray-300 font-mono">--</p>
+          <p id="dash-speed" class="text-lg font-bold text-white mt-1">-- km/h</p>
+        </div>
+      </div>
+      <button onclick="copyFieldConfig()" class="bg-card border border-border hover:border-rato rounded-lg px-4 py-3 text-sm w-full text-left transition">
+        <i class="fas fa-copy text-rato mr-2"></i> Copiar Config do Field Agent
+      </button>
+    </div>
+
+    <!-- Tab: Profile -->
+    <div id="tab-profile" class="tab-content hidden">
+      <h2 class="text-lg font-semibold mb-4">Editar Perfil</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Nome</label>
+          <input id="pf-name" class="w-full bg-dark border border-border rounded-lg px-4 py-2.5 text-white focus:border-rato focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Avatar URL</label>
+          <div class="flex gap-3 items-center">
+            <input id="pf-avatar" class="flex-1 bg-dark border border-border rounded-lg px-4 py-2.5 text-white focus:border-rato focus:outline-none" placeholder="https://...">
+            <img id="pf-avatar-preview" src="" class="w-10 h-10 rounded-full bg-dark border border-border">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Cor</label>
+          <input id="pf-color" type="color" value="#ff6600" class="h-10 w-20 bg-dark border border-border rounded-lg cursor-pointer">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Redes Sociais</label>
+          <div id="pf-socials" class="space-y-2"></div>
+          <button onclick="addSocial()" class="text-rato text-sm mt-2 hover:underline"><i class="fas fa-plus mr-1"></i> Adicionar rede</button>
+        </div>
+        <button onclick="saveProfile()" class="bg-rato hover:bg-orange-600 text-white font-semibold py-2.5 px-6 rounded-lg transition">Salvar Perfil</button>
+      </div>
+    </div>
+
+    <!-- Tab: Stream Keys -->
+    <div id="tab-keys" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Destinos de Stream</h2>
+        <button onclick="addDestination()" class="bg-rato hover:bg-orange-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition"><i class="fas fa-plus mr-1"></i> Adicionar</button>
+      </div>
+      <div id="dest-list" class="space-y-3"></div>
+      <div id="dest-empty" class="text-center text-gray-500 py-8 hidden">
+        <i class="fas fa-satellite-dish text-3xl mb-2"></i>
+        <p>Nenhum destino configurado</p>
+        <p class="text-sm">Adicione Twitch, YouTube ou Kick para ir ao vivo</p>
+      </div>
+      <button onclick="saveDestinations()" id="dest-save" class="mt-4 bg-rato hover:bg-orange-600 text-white font-semibold py-2.5 px-6 rounded-lg transition hidden">Salvar Destinos</button>
+    </div>
+
+    <!-- Tab: Overlays -->
+    <div id="tab-overlays" class="tab-content hidden">
+      <h2 class="text-lg font-semibold mb-4">Overlays OBS & Ferramentas</h2>
+      <div id="overlay-list" class="space-y-3"></div>
+      <div class="mt-6">
+        <h3 class="text-sm font-semibold text-gray-400 mb-2">Config Field Agent</h3>
+        <textarea id="field-config" readonly class="w-full bg-dark border border-border rounded-lg px-4 py-3 text-sm font-mono text-gray-300 h-40 resize-none"></textarea>
+        <button onclick="copyText(document.getElementById('field-config').value)" class="mt-2 text-rato text-sm hover:underline"><i class="fas fa-copy mr-1"></i> Copiar</button>
+      </div>
+      <div class="mt-4">
+        <a href="/pwa/" target="_blank" class="inline-flex items-center gap-2 text-rato hover:underline"><i class="fas fa-mobile-alt"></i> Abrir PWA GPS Tracker</a>
+      </div>
+    </div>
+
+    <!-- Tab: LivePix -->
+    <div id="tab-livepix" class="tab-content hidden">
+      <h2 class="text-lg font-semibold mb-4"><i class="fas fa-heart text-pink-500 mr-2"></i>LivePix</h2>
+      <p class="text-gray-400 text-sm mb-4">Configure seu token LivePix para receber alertas de doacao no OBS.</p>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Token LivePix</label>
+          <input id="lp-token" type="text" placeholder="Seu token do livepix.gg" class="w-full bg-dark border border-border rounded-lg px-4 py-2.5 text-white focus:border-rato focus:outline-none">
+          <a href="https://livepix.gg" target="_blank" class="text-rato text-xs mt-1 inline-block hover:underline">Obtenha seu token em livepix.gg <i class="fas fa-external-link-alt"></i></a>
+        </div>
+        <button onclick="saveLivePix()" class="bg-rato hover:bg-orange-600 text-white font-semibold py-2.5 px-6 rounded-lg transition">Salvar Token</button>
+        <div id="lp-overlay-url" class="hidden mt-4 bg-dark border border-border rounded-lg p-4">
+          <p class="text-sm text-gray-400 mb-1">URL do Overlay para OBS:</p>
+          <code id="lp-url" class="text-xs text-rato break-all"></code>
+          <button onclick="copyText(document.getElementById('lp-url').textContent)" class="block mt-2 text-rato text-sm hover:underline"><i class="fas fa-copy mr-1"></i> Copiar URL</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed top-4 right-4 z-50 hidden">
+  <div class="toast bg-card border border-border rounded-lg px-4 py-3 shadow-lg flex items-center gap-2">
+    <i id="toast-icon" class="fas fa-check text-green-400"></i>
+    <span id="toast-text" class="text-sm"></span>
+  </div>
+</div>
+
+<script>
+let API_KEY = '';
+let STREAMER = null;
+let destinations = [];
+
+// --- Auth ---
+async function doLogin() {
+  const key = document.getElementById('login-key').value.trim();
+  if (!key) return;
+  try {
+    const r = await fetch(`/api/me?api_key=${encodeURIComponent(key)}`);
+    if (!r.ok) throw new Error('API key invalida');
+    STREAMER = await r.json();
+    API_KEY = key;
+    localStorage.setItem('ratonet_panel_key', key);
+    showPanel();
+  } catch (e) {
+    document.getElementById('login-error').textContent = e.message;
+    document.getElementById('login-error').classList.remove('hidden');
+  }
+}
+
+function doLogout() {
+  localStorage.removeItem('ratonet_panel_key');
+  location.reload();
+}
+
+// --- Init ---
+window.addEventListener('DOMContentLoaded', async () => {
+  const saved = localStorage.getItem('ratonet_panel_key');
+  if (saved) {
+    document.getElementById('login-key').value = saved;
+    await doLogin();
+  }
+});
+
+async function showPanel() {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('panel').classList.remove('hidden');
+  document.getElementById('hdr-name').textContent = STREAMER.name;
+  updateStatus();
+  switchTab('dashboard');
+  loadAllData();
+}
+
+function updateStatus() {
+  const el = document.getElementById('hdr-status');
+  const dash = document.getElementById('dash-live');
+  if (STREAMER.is_live) {
+    el.textContent = 'AO VIVO'; el.className = 'text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400';
+    dash.textContent = 'AO VIVO'; dash.className = 'text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400';
+  } else {
+    el.textContent = 'OFFLINE'; el.className = 'text-xs px-2 py-0.5 rounded-full bg-gray-600/30 text-gray-400';
+    dash.textContent = 'OFFLINE'; dash.className = 'text-xs px-2 py-0.5 rounded-full bg-gray-600/30 text-gray-400';
+  }
+}
+
+// --- Tabs ---
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(el => { el.classList.remove('tab-active'); el.classList.add('text-gray-400'); });
+  document.getElementById(`tab-${name}`).classList.remove('hidden');
+  const btn = document.querySelector(`[data-tab="${name}"]`);
+  if (btn) { btn.classList.add('tab-active'); btn.classList.remove('text-gray-400'); }
+}
+
+// --- Load data ---
+async function loadAllData() {
+  loadDashboard();
+  loadProfile();
+  loadDestinations();
+  loadOverlays();
+  loadLivePix();
+  loadFieldConfig();
+}
+
+function loadDashboard() {
+  const s = STREAMER;
+  document.getElementById('dash-name').textContent = s.name;
+  const av = document.getElementById('dash-avatar');
+  av.src = s.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=ff6600&color=fff&size=56`;
+  av.style.borderColor = s.color || '#ff6600';
+  if (s.health) document.getElementById('dash-health').textContent = s.health.score;
+  if (s.gps) {
+    document.getElementById('dash-gps').textContent = `${s.gps.lat.toFixed(4)}, ${s.gps.lng.toFixed(4)}`;
+    document.getElementById('dash-speed').textContent = `${s.gps.speed_kmh.toFixed(1)} km/h`;
+  }
+}
+
+function loadProfile() {
+  const s = STREAMER;
+  document.getElementById('pf-name').value = s.name || '';
+  document.getElementById('pf-avatar').value = s.avatar_url || '';
+  document.getElementById('pf-avatar-preview').src = s.avatar_url || '';
+  document.getElementById('pf-color').value = s.color || '#ff6600';
+  document.getElementById('pf-avatar').addEventListener('input', e => {
+    document.getElementById('pf-avatar-preview').src = e.target.value;
+  });
+  const container = document.getElementById('pf-socials');
+  container.innerHTML = '';
+  (s.socials || []).forEach(soc => addSocialInput(soc));
+}
+
+function addSocialInput(value = '') {
+  const container = document.getElementById('pf-socials');
+  const div = document.createElement('div');
+  div.className = 'flex gap-2';
+  div.innerHTML = `<input class="flex-1 bg-dark border border-border rounded-lg px-3 py-2 text-white text-sm focus:border-rato focus:outline-none" value="${value}" placeholder="@usuario ou URL"><button onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-300 px-2"><i class="fas fa-times"></i></button>`;
+  container.appendChild(div);
+}
+function addSocial() { addSocialInput(); }
+
+async function saveProfile() {
+  const socials = [...document.querySelectorAll('#pf-socials input')].map(i => i.value).filter(Boolean);
+  const body = {
+    name: document.getElementById('pf-name').value,
+    avatar_url: document.getElementById('pf-avatar').value,
+    color: document.getElementById('pf-color').value,
+    socials,
+  };
+  const r = await fetch(`/api/me?api_key=${encodeURIComponent(API_KEY)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (r.ok) { showToast('Perfil salvo!'); const me = await (await fetch(`/api/me?api_key=${encodeURIComponent(API_KEY)}`)).json(); STREAMER = me; loadDashboard(); }
+  else showToast('Erro ao salvar', true);
+}
+
+// --- Destinations ---
+const PLATFORMS = {
+  twitch: { icon: 'fab fa-twitch', color: 'text-purple-400', prefix: 'rtmp://live.twitch.tv/app/' },
+  youtube: { icon: 'fab fa-youtube', color: 'text-red-400', prefix: 'rtmp://a.rtmp.youtube.com/live2/' },
+  kick: { icon: 'fas fa-bolt', color: 'text-green-400', prefix: 'rtmps://fa723fc1b171.global-contribute.live-video.net/app/' },
+  custom: { icon: 'fas fa-globe', color: 'text-gray-400', prefix: '' },
+};
+
+async function loadDestinations() {
+  const r = await fetch(`/api/me/destinations/full?api_key=${encodeURIComponent(API_KEY)}`);
+  if (r.ok) { destinations = (await r.json()).destinations; }
+  renderDestinations();
+}
+
+function renderDestinations() {
+  const list = document.getElementById('dest-list');
+  const empty = document.getElementById('dest-empty');
+  const save = document.getElementById('dest-save');
+  list.innerHTML = '';
+  if (destinations.length === 0) { empty.classList.remove('hidden'); save.classList.add('hidden'); return; }
+  empty.classList.add('hidden'); save.classList.remove('hidden');
+  destinations.forEach((d, i) => {
+    const p = PLATFORMS[d.platform] || PLATFORMS.custom;
+    const div = document.createElement('div');
+    div.className = 'bg-card border border-border rounded-lg p-4 flex flex-col md:flex-row md:items-center gap-3';
+    div.innerHTML = `
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <i class="${p.icon} text-xl ${p.color}"></i>
+        <div class="flex-1 min-w-0">
+          <p class="font-semibold text-sm capitalize">${d.platform}</p>
+          <input class="dest-url w-full bg-dark border border-border rounded px-2 py-1 text-xs font-mono text-gray-300 mt-1 focus:border-rato focus:outline-none" value="${d.rtmp_url}" data-idx="${i}">
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" class="dest-enabled accent-orange-500" data-idx="${i}" ${d.enabled ? 'checked' : ''}>
+          <span class="text-xs text-gray-400">${d.enabled ? 'Ativo' : 'Inativo'}</span>
+        </label>
+        <button onclick="removeDest(${i})" class="text-red-400 hover:text-red-300 px-2"><i class="fas fa-trash text-sm"></i></button>
+      </div>`;
+    list.appendChild(div);
+  });
+  // Bind URL changes
+  list.querySelectorAll('.dest-url').forEach(el => { el.addEventListener('change', e => { destinations[+e.target.dataset.idx].rtmp_url = e.target.value; }); });
+  list.querySelectorAll('.dest-enabled').forEach(el => { el.addEventListener('change', e => { destinations[+e.target.dataset.idx].enabled = e.target.checked; e.target.nextElementSibling.textContent = e.target.checked ? 'Ativo' : 'Inativo'; }); });
+}
+
+function addDestination() {
+  const platform = prompt('Plataforma? (twitch, youtube, kick, custom)', 'twitch');
+  if (!platform) return;
+  const p = PLATFORMS[platform] || PLATFORMS.custom;
+  destinations.push({ platform, rtmp_url: p.prefix, enabled: true });
+  renderDestinations();
+}
+
+function removeDest(i) { destinations.splice(i, 1); renderDestinations(); }
+
+async function saveDestinations() {
+  const r = await fetch(`/api/me/destinations?api_key=${encodeURIComponent(API_KEY)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(destinations),
+  });
+  if (r.ok) showToast('Destinos salvos!');
+  else showToast('Erro ao salvar', true);
+}
+
+// --- Overlays ---
+function loadOverlays() {
+  const id = STREAMER.id;
+  const pk = STREAMER.pull_key || '';
+  const base = location.origin;
+  const overlays = [
+    { name: 'Velocidade', icon: 'fas fa-tachometer-alt', url: `${base}/static/overlays/speed.html?streamer_id=${id}&pull_key=${pk}` },
+    { name: 'Mapa', icon: 'fas fa-map', url: `${base}/static/overlays/map.html?streamer_id=${id}&pull_key=${pk}` },
+    { name: 'Localizacao', icon: 'fas fa-map-marker-alt', url: `${base}/static/overlays/location.html?streamer_id=${id}&pull_key=${pk}` },
+    { name: 'Health', icon: 'fas fa-heartbeat', url: `${base}/static/overlays/health.html?streamer_id=${id}&pull_key=${pk}` },
+    { name: 'LivePix', icon: 'fas fa-heart', url: `${base}/static/overlays/livepix.html?streamer_id=${id}&pull_key=${pk}` },
+  ];
+  const list = document.getElementById('overlay-list');
+  list.innerHTML = overlays.map(o => `
+    <div class="bg-card border border-border rounded-lg p-4">
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-semibold text-sm"><i class="${o.icon} text-rato mr-2"></i>${o.name}</span>
+        <button onclick="copyText('${o.url}')" class="text-rato text-xs hover:underline"><i class="fas fa-copy mr-1"></i>Copiar</button>
+      </div>
+      <code class="text-xs text-gray-400 break-all block">${o.url}</code>
+    </div>`).join('');
+}
+
+async function loadFieldConfig() {
+  const r = await fetch(`/api/me/config?api_key=${encodeURIComponent(API_KEY)}`);
+  if (r.ok) {
+    const data = await r.json();
+    document.getElementById('field-config').value = data.env_content;
+  }
+}
+
+async function copyFieldConfig() {
+  const r = await fetch(`/api/me/config?api_key=${encodeURIComponent(API_KEY)}`);
+  if (r.ok) { const data = await r.json(); await copyText(data.env_content); }
+}
+
+// --- LivePix ---
+async function loadLivePix() {
+  const r = await fetch(`/api/me/livepix?api_key=${encodeURIComponent(API_KEY)}`);
+  if (r.ok) {
+    const data = await r.json();
+    document.getElementById('lp-token').value = data.token || '';
+    updateLivePixUrl();
+  }
+}
+
+async function saveLivePix() {
+  const token = document.getElementById('lp-token').value.trim();
+  const r = await fetch(`/api/me/livepix?api_key=${encodeURIComponent(API_KEY)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
+  });
+  if (r.ok) { showToast('Token LivePix salvo!'); updateLivePixUrl(); }
+  else showToast('Erro ao salvar', true);
+}
+
+function updateLivePixUrl() {
+  const token = document.getElementById('lp-token').value.trim();
+  const el = document.getElementById('lp-overlay-url');
+  if (token) {
+    el.classList.remove('hidden');
+    document.getElementById('lp-url').textContent = `${location.origin}/static/overlays/livepix.html?streamer_id=${STREAMER.id}&pull_key=${STREAMER.pull_key}`;
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+// --- Utils ---
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); showToast('Copiado!'); }
+  catch { showToast('Erro ao copiar', true); }
+}
+
+function showToast(msg, error = false) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-icon').className = error ? 'fas fa-exclamation-circle text-red-400' : 'fas fa-check text-green-400';
+  document.getElementById('toast-text').textContent = msg;
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 2500);
+}
+</script>
+</body>
+</html>

@@ -75,8 +75,23 @@ O sistema é dividido em três componentes independentes:
 - **Velocidade** — Velocímetro digital com altitude e heading
 - **Localização** — Nome do bairro/cidade (reverse geocoding)
 - **Saúde** — Score e barras de qualidade de conexão
+- **LivePix** — Alertas de doação animados (integração LivePix)
 
 Cada overlay é um HTML autocontido, adicionado no OBS como Browser Source.
+
+### Painel do Streamer (`/panel/`)
+- Login com API key — responsivo (mobile + desktop)
+- **Dashboard** — Status ao vivo, GPS, health score
+- **Perfil** — Editar nome, avatar, cor, redes sociais
+- **Stream Keys** — Gerenciar destinos RTMP (Twitch, YouTube, Kick)
+- **Overlays** — URLs copiáveis para OBS + config do field agent
+- **LivePix** — Configurar token para alertas de doação
+
+### Painel Admin (`/admin/`)
+- Login com ADMIN_TOKEN
+- **Dashboard** — Contadores do sistema (registrados, aprovados, online)
+- **Streamers** — Tabela com aprovação, crown, remoção, filtros
+- **Monitor** — Telemetria em tempo real via WebSocket (GPS, health, hardware, rede)
 
 ### PWA GPS Tracker
 - App web instalável para celular do streamer
@@ -359,7 +374,10 @@ Quando o field agent conectar, o servidor sobe automaticamente os relays FFmpeg 
 | PUT | `/api/me` | api_key | Atualizar perfil |
 | GET | `/api/me/config` | api_key | Config pronta para field agent |
 | GET | `/api/me/destinations` | api_key | Lista destinos de stream (URLs mascaradas) |
+| GET | `/api/me/destinations/full` | api_key | Lista destinos com URLs completas (para painel) |
 | PUT | `/api/me/destinations` | api_key | Configura destinos RTMP (Twitch, YouTube, etc.) |
+| GET | `/api/me/livepix` | api_key | Token LivePix configurado |
+| PUT | `/api/me/livepix` | api_key | Salvar token LivePix |
 | GET | `/api/streamers` | — | Lista streamers ao vivo |
 | GET | `/api/streamers/{id}` | — | Dados de um streamer |
 | GET | `/api/overlay/data/{id}` | pull_key | Dados para overlays OBS |
@@ -372,7 +390,9 @@ Quando o field agent conectar, o servidor sobe automaticamente os relays FFmpeg 
 | Método | Endpoint | Auth | Descrição |
 |---|---|---|---|
 | GET | `/api/admin/streamers` | admin_token | Lista todos os streamers |
+| GET | `/api/admin/stats` | admin_token | Contadores e streamers online |
 | POST | `/api/admin/streamers/{id}/approve` | admin_token | Aprovar streamer |
+| POST | `/api/admin/streamers/{id}/crown` | admin_token | Toggle crown (destaque) |
 | DELETE | `/api/admin/streamers/{id}` | admin_token | Remover streamer |
 
 ### WebSocket
@@ -393,13 +413,17 @@ http://seu-servidor:8000/static/overlays/speed.html?streamer_id=UUID&pull_key=pk
 http://seu-servidor:8000/static/overlays/map.html?streamer_id=UUID&pull_key=pk_XXX
 http://seu-servidor:8000/static/overlays/location.html?streamer_id=UUID&pull_key=pk_XXX
 http://seu-servidor:8000/static/overlays/health.html?streamer_id=UUID&pull_key=pk_XXX
+http://seu-servidor:8000/static/overlays/livepix.html?streamer_id=UUID&pull_key=pk_XXX
 ```
+
+> **LivePix:** Configure o token no painel do streamer (`/panel/` → aba LivePix). O overlay conecta direto ao WebSocket da LivePix e exibe alertas de doação animados. Para testar, adicione `&test=1` na URL.
 
 Tamanhos recomendados:
 - **Mapa**: 400x300
 - **Velocidade**: 300x120
 - **Localização**: 500x60
 - **Saúde**: 250x130
+- **LivePix**: 450x200
 
 ---
 
@@ -414,6 +438,30 @@ Acesse `/pwa/` no celular do streamer:
 O tracker usa `watchPosition` com alta precisão e mantém a tela ligada via Wake Lock API. Se a conexão cair, os pontos GPS são enfileirados e enviados automaticamente ao reconectar.
 
 > **Nota:** No iOS, o tracking em background é limitado pelo sistema. Para uso contínuo, mantenha o app em primeiro plano. No Android, funciona em background normalmente.
+
+---
+
+## Painéis Web
+
+### Painel do Streamer (`/panel/`)
+
+Acesse `http://seu-servidor:8000/panel/` e faça login com sua **API key**.
+
+**Tabs disponíveis:**
+- **Dashboard** — Status ao vivo, GPS, health score, uptime
+- **Perfil** — Editar nome, avatar, cor, redes sociais
+- **Stream Keys** — Gerenciar destinos RTMP (Twitch, YouTube, Kick) com toggle liga/desliga
+- **Overlays** — URLs copiáveis para cada overlay OBS + config do field agent
+- **LivePix** — Configurar token para alertas de doação no overlay
+
+### Painel Admin (`/admin/`)
+
+Acesse `http://seu-servidor:8000/admin/` e faça login com o **ADMIN_TOKEN**.
+
+**Tabs disponíveis:**
+- **Dashboard** — Contadores: registrados, aprovados, online, field agents, dashboards
+- **Streamers** — Tabela completa com ações (aprovar, crown, remover) e filtros (todos/pendentes/aprovados/online)
+- **Monitor** — Telemetria em tempo real via WebSocket (GPS, health bar, hardware, rede)
 
 ---
 
@@ -466,7 +514,14 @@ RatoNet/
 │   │   ├── map.html              # Mini-mapa Leaflet
 │   │   ├── speed.html            # Velocímetro digital
 │   │   ├── location.html         # Nome do local (geocoding)
-│   │   └── health.html           # Score de saúde da conexão
+│   │   ├── health.html           # Score de saúde da conexão
+│   │   └── livepix.html          # Alertas de doação LivePix
+│   │
+│   ├── panel/                    # Painel do Streamer (SPA)
+│   │   └── index.html            # Login + 5 tabs (perfil, keys, overlays, livepix)
+│   │
+│   ├── admin/                    # Painel Admin (SPA)
+│   │   └── index.html            # Login + 3 tabs (dashboard, streamers, monitor)
 │   │
 │   └── pwa/                      # PWA GPS Tracker (celular)
 │       ├── index.html            # Login
@@ -481,7 +536,8 @@ RatoNet/
     ├── test_models.py            # Pydantic models
     ├── test_geocoder.py          # Geocoder + haversine
     ├── test_db.py                # CRUD SQLite
-    └── test_routes.py            # Endpoints REST
+    ├── test_routes.py            # Endpoints REST
+    └── test_relay.py             # Relay + PortAllocator
 ```
 
 ---

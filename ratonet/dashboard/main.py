@@ -111,6 +111,26 @@ async def serve_index():
     return FileResponse(index_path)
 
 
+@app.get("/panel")
+@app.get("/panel/")
+async def serve_panel():
+    """Serve o painel do streamer."""
+    panel_index = STATIC_DIR / "static" / "panel" / "index.html"
+    if panel_index.exists():
+        return FileResponse(panel_index)
+    return {"error": "Panel not found"}
+
+
+@app.get("/admin")
+@app.get("/admin/")
+async def serve_admin_panel():
+    """Serve o painel de administração."""
+    admin_index = STATIC_DIR / "static" / "admin" / "index.html"
+    if admin_index.exists():
+        return FileResponse(admin_index)
+    return {"error": "Admin panel not found"}
+
+
 @app.get("/pwa")
 @app.get("/pwa/")
 async def serve_pwa_index():

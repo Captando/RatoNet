@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RatoNet - Admin</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: { extend: { colors: { rato: '#ff6600', dark: '#0a0a0a', card: '#141414', border: '#2a2a2a' }, fontFamily: { sans: ['Inter', 'sans-serif'] } } }
+}
+</script>
+<style>
+  body { background: #0a0a0a; }
+  .tab-active { border-color: #ff6600; color: #ff6600; }
+  .toast { animation: slideIn .3s ease; }
+  @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+</style>
+</head>
+<body class="font-sans text-gray-200 min-h-screen">
+
+<!-- Login -->
+<div id="login-screen" class="flex items-center justify-center min-h-screen px-4">
+  <div class="bg-card border border-border rounded-xl p-8 w-full max-w-md">
+    <div class="text-center mb-6">
+      <h1 class="text-2xl font-bold text-rato">RatoNet Admin</h1>
+      <p class="text-gray-400 text-sm mt-1">Painel de Administracao</p>
+    </div>
+    <div>
+      <label class="block text-sm text-gray-400 mb-2">Admin Token</label>
+      <input id="login-token" type="password" placeholder="Token..." class="w-full bg-dark border border-border rounded-lg px-4 py-3 text-white focus:border-rato focus:outline-none">
+      <button onclick="doLogin()" class="w-full mt-4 bg-rato hover:bg-orange-600 text-white font-semibold py-3 rounded-lg transition">Entrar</button>
+      <p id="login-error" class="text-red-400 text-sm mt-2 hidden"></p>
+    </div>
+  </div>
+</div>
+
+<!-- Panel -->
+<div id="panel" class="hidden">
+  <header class="bg-card border-b border-border px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+    <span class="text-rato font-bold text-lg"><i class="fas fa-shield-alt mr-2"></i>RatoNet Admin</span>
+    <button onclick="doLogout()" class="text-gray-500 hover:text-gray-300 text-sm"><i class="fas fa-sign-out-alt"></i> Sair</button>
+  </header>
+
+  <nav class="bg-card border-b border-border overflow-x-auto">
+    <div class="flex px-4 gap-1 min-w-max">
+      <button onclick="switchTab('dashboard')" data-tab="dashboard" class="tab-btn px-4 py-3 text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition whitespace-nowrap"><i class="fas fa-chart-bar mr-1"></i> Dashboard</button>
+      <button onclick="switchTab('streamers')" data-tab="streamers" class="tab-btn px-4 py-3 text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition whitespace-nowrap"><i class="fas fa-users mr-1"></i> Streamers</button>
+      <button onclick="switchTab('monitor')" data-tab="monitor" class="tab-btn px-4 py-3 text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 transition whitespace-nowrap"><i class="fas fa-satellite mr-1"></i> Monitor</button>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto px-4 py-6">
+    <!-- Dashboard -->
+    <div id="tab-dashboard" class="tab-content">
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        <div class="bg-card border border-border rounded-xl p-4 text-center">
+          <p class="text-gray-500 text-xs">Registrados</p>
+          <p id="st-registered" class="text-2xl font-bold text-white">-</p>
+        </div>
+        <div class="bg-card border border-border rounded-xl p-4 text-center">
+          <p class="text-gray-500 text-xs">Aprovados</p>
+          <p id="st-approved" class="text-2xl font-bold text-green-400">-</p>
+        </div>
+        <div class="bg-card border border-border rounded-xl p-4 text-center">
+          <p class="text-gray-500 text-xs">Online</p>
+          <p id="st-online" class="text-2xl font-bold text-rato">-</p>
+        </div>
+        <div class="bg-card border border-border rounded-xl p-4 text-center">
+          <p class="text-gray-500 text-xs">Dashboards</p>
+          <p id="st-dashboards" class="text-2xl font-bold text-blue-400">-</p>
+        </div>
+        <div class="bg-card border border-border rounded-xl p-4 text-center">
+          <p class="text-gray-500 text-xs">Field Agents</p>
+          <p id="st-agents" class="text-2xl font-bold text-purple-400">-</p>
+        </div>
+      </div>
+      <div id="online-list" class="space-y-2"></div>
+    </div>
+
+    <!-- Streamers -->
+    <div id="tab-streamers" class="tab-content hidden">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+        <h2 class="text-lg font-semibold">Gerenciar Streamers</h2>
+        <div class="flex gap-2 flex-wrap">
+          <button onclick="filterStreamers('all')" data-filter="all" class="filter-btn px-3 py-1.5 text-xs rounded-full bg-card border border-border hover:border-rato transition">Todos</button>
+          <button onclick="filterStreamers('pending')" data-filter="pending" class="filter-btn px-3 py-1.5 text-xs rounded-full bg-card border border-border hover:border-rato transition">Pendentes</button>
+          <button onclick="filterStreamers('approved')" data-filter="approved" class="filter-btn px-3 py-1.5 text-xs rounded-full bg-card border border-border hover:border-rato transition">Aprovados</button>
+          <button onclick="filterStreamers('online')" data-filter="online" class="filter-btn px-3 py-1.5 text-xs rounded-full bg-card border border-border hover:border-rato transition">Online</button>
+        </div>
+      </div>
+      <div id="streamers-table" class="space-y-2"></div>
+    </div>
+
+    <!-- Monitor -->
+    <div id="tab-monitor" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Monitor ao Vivo</h2>
+        <span id="ws-status" class="text-xs px-2 py-1 rounded-full bg-gray-600/30 text-gray-400">Desconectado</span>
+      </div>
+      <div id="monitor-cards" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+      <p id="monitor-empty" class="text-center text-gray-500 py-8">Nenhum streamer ao vivo</p>
+    </div>
+  </main>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed top-4 right-4 z-50 hidden">
+  <div class="toast bg-card border border-border rounded-lg px-4 py-3 shadow-lg flex items-center gap-2">
+    <i id="toast-icon" class="fas fa-check text-green-400"></i>
+    <span id="toast-text" class="text-sm"></span>
+  </div>
+</div>
+
+<script>
+let TOKEN = '';
+let allStreamers = [];
+let currentFilter = 'all';
+let liveStreamers = {};
+let ws = null;
+
+// --- Auth ---
+async function doLogin() {
+  const token = document.getElementById('login-token').value.trim();
+  if (!token) return;
+  try {
+    const r = await fetch('/api/admin/streamers', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!r.ok) throw new Error('Token invalido');
+    TOKEN = token;
+    localStorage.setItem('ratonet_admin_token', token);
+    allStreamers = await r.json();
+    showPanel();
+  } catch (e) {
+    document.getElementById('login-error').textContent = e.message;
+    document.getElementById('login-error').classList.remove('hidden');
+  }
+}
+
+function doLogout() { localStorage.removeItem('ratonet_admin_token'); location.reload(); }
+
+window.addEventListener('DOMContentLoaded', async () => {
+  const saved = localStorage.getItem('ratonet_admin_token');
+  if (saved) { document.getElementById('login-token').value = saved; await doLogin(); }
+});
+
+function showPanel() {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('panel').classList.remove('hidden');
+  switchTab('dashboard');
+  loadStats();
+  connectWS();
+}
+
+// --- Tabs ---
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(el => { el.classList.remove('tab-active'); el.classList.add('text-gray-400'); });
+  document.getElementById(`tab-${name}`).classList.remove('hidden');
+  const btn = document.querySelector(`[data-tab="${name}"]`);
+  if (btn) { btn.classList.add('tab-active'); btn.classList.remove('text-gray-400'); }
+  if (name === 'streamers') loadStreamers();
+}
+
+// --- Dashboard ---
+async function loadStats() {
+  const r = await fetch('/api/status');
+  if (!r.ok) return;
+  const d = await r.json();
+  document.getElementById('st-registered').textContent = d.streamers_registered;
+  document.getElementById('st-approved').textContent = d.streamers_approved;
+  document.getElementById('st-online').textContent = d.streamers_online;
+  document.getElementById('st-dashboards').textContent = d.dashboard_clients;
+  document.getElementById('st-agents').textContent = d.field_agents;
+}
+
+// --- Streamers ---
+async function loadStreamers() {
+  const r = await fetch('/api/admin/streamers', { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+  if (r.ok) allStreamers = await r.json();
+  renderStreamers();
+}
+
+function filterStreamers(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('border-rato', 'text-rato'));
+  const btn = document.querySelector(`[data-filter="${filter}"]`);
+  if (btn) { btn.classList.add('border-rato', 'text-rato'); }
+  renderStreamers();
+}
+
+function renderStreamers() {
+  let list = allStreamers;
+  if (currentFilter === 'pending') list = list.filter(s => !s.approved);
+  else if (currentFilter === 'approved') list = list.filter(s => s.approved);
+  else if (currentFilter === 'online') list = list.filter(s => s.is_live);
+
+  const container = document.getElementById('streamers-table');
+  if (list.length === 0) { container.innerHTML = '<p class="text-center text-gray-500 py-8">Nenhum streamer encontrado</p>'; return; }
+
+  container.innerHTML = list.map(s => {
+    const avatar = s.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=ff6600&color=fff&size=32`;
+    const statusBadge = s.approved
+      ? '<span class="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">Aprovado</span>'
+      : '<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400">Pendente</span>';
+    const liveBadge = s.is_live
+      ? '<span class="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 ml-1">AO VIVO</span>' : '';
+    const crownIcon = s.is_crown ? '<i class="fas fa-crown text-yellow-400 ml-1"></i>' : '';
+
+    let actions = '';
+    if (!s.approved) actions += `<button onclick="approveStreamer('${s.id}')" class="text-green-400 hover:text-green-300 text-xs px-2 py-1 rounded border border-green-400/30 hover:bg-green-400/10"><i class="fas fa-check mr-1"></i>Aprovar</button>`;
+    actions += `<button onclick="toggleCrown('${s.id}')" class="text-yellow-400 hover:text-yellow-300 text-xs px-2 py-1 rounded border border-yellow-400/30 hover:bg-yellow-400/10"><i class="fas fa-crown"></i></button>`;
+    actions += `<button onclick="removeStreamer('${s.id}', '${s.name.replace(/'/g, "\\'")}')" class="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded border border-red-400/30 hover:bg-red-400/10"><i class="fas fa-trash"></i></button>`;
+
+    return `
+      <div class="bg-card border border-border rounded-lg p-4 flex flex-col md:flex-row md:items-center gap-3">
+        <div class="flex items-center gap-3 flex-1 min-w-0">
+          <img src="${avatar}" class="w-8 h-8 rounded-full" style="border: 2px solid ${s.color || '#ff6600'}">
+          <div class="min-w-0">
+            <p class="font-semibold text-sm truncate">${s.name}${crownIcon}</p>
+            <p class="text-xs text-gray-500 truncate">${s.email || ''}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">${statusBadge}${liveBadge}</div>
+        <div class="flex items-center gap-2">${actions}</div>
+      </div>`;
+  }).join('');
+}
+
+async function approveStreamer(id) {
+  const r = await fetch(`/api/admin/streamers/${id}/approve`, { method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` } });
+  if (r.ok) { showToast('Streamer aprovado!'); await loadStreamers(); loadStats(); }
+}
+
+async function toggleCrown(id) {
+  const r = await fetch(`/api/admin/streamers/${id}/crown`, { method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` } });
+  if (r.ok) { const d = await r.json(); showToast(d.message); await loadStreamers(); }
+}
+
+async function removeStreamer(id, name) {
+  if (!confirm(`Remover streamer "${name}"? Esta acao nao pode ser desfeita.`)) return;
+  const r = await fetch(`/api/admin/streamers/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${TOKEN}` } });
+  if (r.ok) { showToast('Streamer removido'); await loadStreamers(); loadStats(); }
+}
+
+// --- Monitor (WebSocket) ---
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/dashboard`);
+  const status = document.getElementById('ws-status');
+
+  ws.onopen = () => { status.textContent = 'Conectado'; status.className = 'text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-400'; };
+  ws.onclose = () => { status.textContent = 'Desconectado'; status.className = 'text-xs px-2 py-1 rounded-full bg-gray-600/30 text-gray-400'; setTimeout(connectWS, 3000); };
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'full_sync') {
+        liveStreamers = {};
+        (msg.data.streamers || []).forEach(s => { liveStreamers[s.id] = s; });
+      } else if (msg.type === 'streamer_update') {
+        liveStreamers[msg.data.streamer_id] = msg.data.streamer;
+      } else if (msg.type === 'streamer_online') {
+        liveStreamers[msg.data.streamer.id] = msg.data.streamer;
+      } else if (msg.type === 'streamer_offline') {
+        delete liveStreamers[msg.data.streamer_id];
+      }
+      renderMonitor();
+    } catch {}
+  };
+}
+
+function renderMonitor() {
+  const container = document.getElementById('monitor-cards');
+  const empty = document.getElementById('monitor-empty');
+  const ids = Object.keys(liveStreamers);
+
+  if (ids.length === 0) { container.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  // Also update online list on dashboard tab
+  const onlineList = document.getElementById('online-list');
+  onlineList.innerHTML = ids.map(id => {
+    const s = liveStreamers[id];
+    return `<div class="bg-card border border-border rounded-lg px-4 py-2 flex items-center gap-3">
+      <span class="w-2 h-2 rounded-full bg-green-400"></span>
+      <span class="text-sm">${s.name}</span>
+      <span class="text-xs text-gray-500 ml-auto">Health: ${s.health?.score ?? '--'}</span>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = ids.map(id => {
+    const s = liveStreamers[id];
+    const h = s.health || {};
+    const g = s.gps || {};
+    const hw = s.hardware || {};
+    const stateColor = { healthy: 'text-green-400', degraded: 'text-yellow-400', critical: 'text-red-400', down: 'text-gray-500' }[h.state] || 'text-gray-400';
+
+    const links = (s.network_links || []).map(l =>
+      `<span class="inline-flex items-center gap-1 text-xs ${l.connected ? 'text-green-400' : 'text-gray-500'}"><span class="w-1.5 h-1.5 rounded-full ${l.connected ? 'bg-green-400' : 'bg-gray-600'}"></span>${l.interface}</span>`
+    ).join(' ');
+
+    return `
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="flex items-center gap-3 mb-3">
+          <span class="w-2 h-2 rounded-full bg-green-400"></span>
+          <h3 class="font-semibold">${s.name}</h3>
+          <span class="${stateColor} text-xs ml-auto font-semibold uppercase">${h.state || '?'}</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <p class="text-gray-500 text-xs">Health</p>
+            <div class="flex items-center gap-2">
+              <div class="flex-1 h-2 bg-dark rounded-full overflow-hidden"><div class="h-full rounded-full ${h.score > 70 ? 'bg-green-400' : h.score > 40 ? 'bg-yellow-400' : 'bg-red-400'}" style="width:${h.score || 0}%"></div></div>
+              <span class="text-xs font-mono">${h.score ?? '--'}</span>
+            </div>
+          </div>
+          <div>
+            <p class="text-gray-500 text-xs">GPS</p>
+            <p class="font-mono text-xs">${g.lat?.toFixed(4) || '--'}, ${g.lng?.toFixed(4) || '--'}</p>
+            <p class="text-rato text-xs font-bold">${g.speed_kmh?.toFixed(0) || '0'} km/h</p>
+          </div>
+          <div>
+            <p class="text-gray-500 text-xs">Hardware</p>
+            <p class="text-xs">CPU ${hw.cpu_percent?.toFixed(0) || '0'}% | RAM ${hw.ram_percent?.toFixed(0) || '0'}%</p>
+            <p class="text-xs">${hw.battery_percent != null ? `Bat ${hw.battery_percent.toFixed(0)}%${hw.battery_charging ? ' <i class="fas fa-bolt text-yellow-400"></i>' : ''}` : ''}</p>
+          </div>
+          <div>
+            <p class="text-gray-500 text-xs">Rede</p>
+            <div class="flex flex-wrap gap-2">${links || '<span class="text-gray-500 text-xs">--</span>'}</div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Update dashboard stats
+  document.getElementById('st-online').textContent = ids.length;
+}
+
+// --- Utils ---
+function showToast(msg, error = false) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-icon').className = error ? 'fas fa-exclamation-circle text-red-400' : 'fas fa-check text-green-400';
+  document.getElementById('toast-text').textContent = msg;
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 2500);
+}
+</script>
+</body>
+</html>
