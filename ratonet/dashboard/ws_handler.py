@@ -25,6 +25,7 @@ from ratonet.dashboard.models import (
     StarlinkMetrics,
     Streamer,
 )
+from ratonet.config import settings
 from ratonet.server.relay import StreamerRelayManager
 from ratonet.server.srt_receiver import PortAllocator
 
@@ -39,7 +40,10 @@ class ConnectionManager:
         self.field_agents: Dict[str, WebSocket] = {}  # streamer_id → ws
         self.streamers: Dict[str, Streamer] = {}  # streamers ao vivo (populado dinamicamente)
         self.streamer_relay: StreamerRelayManager = StreamerRelayManager()
-        self.port_allocator: PortAllocator = PortAllocator()
+        self.port_allocator: PortAllocator = PortAllocator(
+            base_port=settings.srt.base_port,
+            ports_per_streamer=settings.srt.max_links,
+        )
 
     # --- Dashboard (browsers) ---
 

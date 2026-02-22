@@ -2,9 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Instala dependências de sistema (ffmpeg para relay)
+# Instala dependências de sistema (ffmpeg para relay, srt-tools para SRT receiver)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get install -y --no-install-recommends ffmpeg srt-tools && \
     rm -rf /var/lib/apt/lists/*
 
 # Instala dependências Python

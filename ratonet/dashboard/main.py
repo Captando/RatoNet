@@ -5,6 +5,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import os
+
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -28,6 +30,13 @@ async def lifespan(app: FastAPI):
     # Inicializa banco de dados
     await db.init_db(settings.database.path)
 
+    # Alerta se ADMIN_TOKEN não configurado
+    if not settings.admin.token:
+        log.warning(
+            "⚠ ADMIN_TOKEN não configurado! Endpoints admin retornarão 503. "
+            "Defina ADMIN_TOKEN no .env para habilitar o painel admin."
+        )
+
     registered = await db.list_streamers(db_path=settings.database.path)
     approved = [s for s in registered if s["approved"]]
     log.info(
@@ -45,10 +54,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS para desenvolvimento
+# CORS — restrito em produção se CORS_ORIGINS definido, senão permite tudo
+_cors_env = os.environ.get("CORS_ORIGINS", "")
+_cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -74,21 +86,25 @@ async def ws_dashboard(ws: WebSocket):
 @app.websocket("/ws/field/{streamer_id}")
 async def ws_field(ws: WebSocket, streamer_id: str, key: str = Query(default="")):
     """WebSocket para field agents (autenticado por API key)."""
-    # Valida API key
+    # Valida API key (precisa aceitar antes de fechar)
     if not key:
+        await ws.accept()
         await ws.close(code=4001, reason="API key obrigatória: ?key=SUA_KEY")
         return
 
     streamer_data = await db.get_streamer_by_api_key(key, db_path=settings.database.path)
     if not streamer_data:
+        await ws.accept()
         await ws.close(code=4001, reason="API key inválida")
         return
 
     if streamer_data["id"] != streamer_id:
+        await ws.accept()
         await ws.close(code=4001, reason="API key não corresponde ao streamer_id")
         return
 
     if not streamer_data["approved"]:
+        await ws.accept()
         await ws.close(code=4003, reason="Streamer não aprovado. Aguarde aprovação do admin.")
         return
 
@@ -167,7 +183,6 @@ def main():
         "ratonet.dashboard.main:app",
         host=settings.dashboard.host,
         port=settings.dashboard.port,
-        reload=True,
     )
 
 

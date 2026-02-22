@@ -3,7 +3,7 @@ services:
     build: .
     ports:
       - "8000:8000"
-      - "9000-9003:9000-9003/udp"  # SRT (4 links)
+      - "9000-9099:9000-9099/udp"  # SRT (até 25 streamers × 4 links)
       - "5001:5001/udp"            # SRTLA receiver
     volumes:
       - ./data:/app/data
