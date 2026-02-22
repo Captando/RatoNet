@@ -1,23 +1,27 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RatoNet - Streaming IRL</title>
-    
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Michroma&display=swap" rel="stylesheet">
-    
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Michroma&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 
     <script>
         tailwind.config = {
@@ -25,16 +29,21 @@
                 extend: {
                     colors: {
                         ratonet: {
-                            primary: '#ff6600',
+                            primary: '#FF8C00',
                             dark: '#0a0a0a',
                             panel: '#111111',
-                            border: '#222222',
+                            border: '#1a1a1a',
                             textMuted: '#888888'
+                        },
+                        helios: {
+                            sun: '#FF8C00',
+                            flare: '#FFB347'
                         }
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
-                        display: ['Michroma', 'sans-serif']
+                        display: ['Michroma', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
                     }
                 }
             }
@@ -42,36 +51,76 @@
     </script>
 
     <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; background-color: #000; color: #fff; height: 100%; width: 100%; }
-        #map { position: absolute; inset: 0; z-index: 0; background: #0a0a0a; height: 100vh; width: 100vw; }
-        
-        /* Overrides para os painéis ficarem acima do mapa */
-        .ui-layer { position: absolute; z-index: 1000; pointer-events: none; }
-        .ui-interactive { pointer-events: auto; }
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: #fff;
+            height: 100%;
+            width: 100%;
+        }
 
-        /* Estilização Customizada da Barra de Rolagem */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        #map {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            background: #0a0a0a;
+            height: 100vh;
+            width: 100vw;
+        }
 
-        /* Esconder os controles padrão do Leaflet */
-        .leaflet-control-zoom { display: none !important; }
-        .leaflet-control-attribution { display: none !important; }
+        /* UI layers acima do mapa */
+        .ui-layer {
+            position: absolute;
+            z-index: 1000;
+            pointer-events: none;
+        }
 
-        /* Marcadores Customizados do Mapa */
+        .ui-interactive {
+            pointer-events: auto;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Esconder controles padrão do Leaflet */
+        .leaflet-control-zoom {
+            display: none !important;
+        }
+
+        .leaflet-control-attribution {
+            display: none !important;
+        }
+
+        /* Marcadores Customizados */
         .streamer-marker {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             width: 60px;
-            margin-left: -30px; /* Centralizar no ponto */
+            margin-left: -30px;
             margin-top: -30px;
-            filter: drop-shadow(0px 4px 10px rgba(0,0,0,0.5));
+            filter: drop-shadow(0px 4px 10px rgba(0, 0, 0, 0.5));
         }
-        
-        /* Correção do overflow do avatar */
+
         .streamer-avatar-wrapper {
             position: relative;
             width: 44px;
@@ -90,7 +139,7 @@
             object-fit: cover;
             border: 2px solid #111;
             background-color: #222;
-            box-sizing: border-box; /* Impede que a borda vaze do círculo */
+            box-sizing: border-box;
         }
 
         .streamer-status-dot {
@@ -99,7 +148,7 @@
             right: -2px;
             width: 12px;
             height: 12px;
-            background-color: #ef4444; /* red-500 */
+            background-color: #ef4444;
             border: 2px solid #111;
             border-radius: 50%;
             z-index: 10;
@@ -117,7 +166,7 @@
             white-space: nowrap;
         }
 
-        /* Ícones Sociais Menores */
+        /* Ícones Sociais */
         .social-btn {
             display: inline-flex;
             align-items: center;
@@ -125,70 +174,270 @@
             width: 20px;
             height: 20px;
             border-radius: 4px;
-            background: rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.1);
             color: #aaa;
             font-size: 10px;
             transition: all 0.2s;
         }
-        .social-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+
+        .social-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+
+        /* View mode button ativo */
+        .view-btn-active {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Tooltip genérico */
+        .tooltip-hover {
+            position: absolute;
+            top: -2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 2px 8px;
+            background: rgba(0, 0, 0, 0.9);
+            font-size: 10px;
+            color: #fff;
+            border-radius: 4px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s;
+            white-space: nowrap;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(4px);
+        }
+
+        .group:hover .tooltip-hover {
+            opacity: 1;
+        }
+
+        /* Glow do dot verde */
+        .live-dot {
+            box-shadow: 0 0 4px #4ade80;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                box-shadow: 0 0 4px #4ade80;
+            }
+
+            50% {
+                box-shadow: 0 0 8px #4ade80, 0 0 12px rgba(74, 222, 128, 0.3);
+            }
+        }
+
+        /* Sidebar retrátil */
+        #sidebar-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            height: 100%;
+            width: 340px;
+            z-index: 1100;
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+        }
+
+        #sidebar-panel.sidebar-open {
+            transform: translateX(0);
+            pointer-events: auto;
+        }
+
+        #sidebar-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1099;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        #sidebar-overlay.sidebar-open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Em desktop (md+), o overlay fica invisível */
+        @media (min-width: 768px) {
+            #sidebar-panel {
+                width: 340px;
+            }
+
+            #sidebar-overlay.sidebar-open {
+                opacity: 0;
+                pointer-events: none;
+            }
+        }
+
+        /* Em mobile, sidebar ocupa mais espaço */
+        @media (max-width: 767px) {
+            #sidebar-panel {
+                width: 300px;
+            }
+        }
+
+        /* Botão toggle da sidebar */
+        #sidebar-toggle {
+            position: fixed;
+            top: 50%;
+            right: 0;
+            z-index: 1101;
+            transform: translateY(-50%);
+            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #sidebar-toggle.sidebar-open {
+            right: 340px;
+        }
+
+        @media (max-width: 767px) {
+            #sidebar-toggle.sidebar-open {
+                right: 300px;
+            }
+        }
+
+        /* Zoom controls - posição dinâmica */
+        #zoom-controls {
+            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
     </style>
 </head>
+
 <body class="font-sans antialiased text-white selection:bg-ratonet-primary selection:text-white">
 
     <!-- Container do Mapa -->
     <div id="map"></div>
 
-    <!-- Banner de Status da Conexão -->
-    <div id="status-banner" class="ui-layer top-6 left-1/2 -translate-x-1/2 w-max max-w-[90vw]">
-        <div class="bg-blue-500/10 backdrop-blur-md border border-blue-500/30 text-blue-400 px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 shadow-lg">
+    <!-- ============================================================ -->
+    <!-- HEADER BAR (estilo Helios) -->
+    <!-- ============================================================ -->
+    <header
+        class="fixed inset-x-0 top-0 h-9 bg-black/40 backdrop-blur-sm flex items-center justify-between px-4 z-50 border-b border-white/5 ui-interactive">
+        <!-- Esquerda: Logo + Info -->
+        <div class="flex items-center gap-3">
+            <span class="text-helios-sun font-display font-bold text-xs tracking-wider">RATONET OS</span>
+            <div class="w-px h-4 bg-white/10"></div>
+            <span class="text-white/60 text-[11px] font-medium" id="header-streamer-count">0 streamers</span>
+            <span class="text-white/20 hidden sm:inline">&bull;</span>
+            <span class="text-white/60 text-[11px] font-medium hidden sm:inline" id="header-live-count">0 ao vivo</span>
+        </div>
+
+        <!-- Direita: Status + Horário -->
+        <div class="flex items-center gap-3">
+            <div class="flex items-center gap-1.5" id="header-online-status">
+                <div class="w-1.5 h-1.5 rounded-full bg-green-400 live-dot"></div>
+                <span class="text-green-400/60 text-[10px] hidden sm:inline" id="header-viewers">0 viewers</span>
+            </div>
+            <span class="text-white/30 text-[10px] hidden sm:inline">ONLINE</span>
+            <span class="text-white/60 text-[11px] font-mono" id="header-clock">--:-- BRT</span>
+        </div>
+    </header>
+
+    <!-- ============================================================ -->
+    <!-- TELEMETRY CARD (canto superior esquerdo) -->
+    <!-- ============================================================ -->
+    <div class="ui-layer top-12 left-4 ui-interactive">
+        <div
+            class="bg-black/40 backdrop-blur-sm rounded-xl border border-white/5 p-4 flex flex-col gap-3 min-w-[140px] shadow-lg hidden sm:flex">
+            <div class="text-helios-flare font-display font-bold text-[10px] tracking-wider uppercase">Telemetria</div>
+
+            <div class="space-y-2.5">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-clock w-3 text-white/40 text-[10px]"></i>
+                    <div>
+                        <div class="text-[9px] text-white/40 font-mono uppercase">Uptime</div>
+                        <div class="text-xs font-bold text-white/80 font-mono" id="telemetry-uptime">--</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-gauge-high w-3 text-white/40 text-[10px]"></i>
+                    <div>
+                        <div class="text-[9px] text-white/40 font-mono uppercase">Vel. Média</div>
+                        <div class="text-xs font-bold text-white/80 font-mono" id="telemetry-speed">0 km/h</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-video w-3 text-white/40 text-[10px]"></i>
+                    <div>
+                        <div class="text-[9px] text-white/40 font-mono uppercase">Câmeras</div>
+                        <div class="text-xs font-bold text-white/80 font-mono" id="telemetry-cams">0 ON</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-users w-3 text-white/40 text-[10px]"></i>
+                    <div>
+                        <div class="text-[9px] text-white/40 font-mono uppercase">Viewers</div>
+                        <div class="text-xs font-bold text-white/80 font-mono" id="telemetry-viewers">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- BANNER DE STATUS DA CONEXÃO -->
+    <!-- ============================================================ -->
+    <div id="status-banner" class="ui-layer top-12 left-1/2 -translate-x-1/2 w-max max-w-[90vw]">
+        <div
+            class="bg-blue-500/10 backdrop-blur-md border border-blue-500/30 text-blue-400 px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 shadow-lg">
             <i class="fa-solid fa-satellite-dish text-sm"></i>
             <span class="text-center">Conectando ao servidor...</span>
         </div>
     </div>
 
-    <!-- Interface (Esquerda) -->
-    <div class="ui-layer top-0 left-0 p-6 flex flex-col gap-4 w-full md:w-auto">
-        
-        <!-- Navegação / Pílulas -->
-        <div class="ui-interactive flex items-center bg-black/60 backdrop-blur-md border border-white/10 rounded-full p-1.5 shadow-lg w-max max-w-full overflow-x-auto">
-            <button class="flex items-center gap-2 bg-white/10 text-ratonet-primary px-4 py-2 rounded-full font-medium text-sm transition-colors whitespace-nowrap">
-                <i class="fa-solid fa-map"></i> Mapa
-            </button>
-            <button onclick="showDemoToast('eyeRat')" class="flex items-center gap-2 text-white/70 hover:text-white px-4 py-2 rounded-full font-medium text-sm transition-colors whitespace-nowrap">
-                <i class="fa-solid fa-tv"></i> eyeRat
-            </button>
-            <button onclick="showDemoToast('Split')" class="flex items-center gap-2 text-white/70 hover:text-white px-4 py-2 rounded-full font-medium text-sm transition-colors whitespace-nowrap">
-                <i class="fa-solid fa-bolt"></i> Split
-            </button>
-        </div>
+    <!-- ============================================================ -->
+    <!-- SIDEBAR OVERLAY (mobile) -->
+    <!-- ============================================================ -->
+    <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
 
-        <!-- Card de Status -->
-        <div class="ui-interactive bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 rounded-2xl p-4 shadow-xl w-72 mt-2 hidden sm:block">
-            <h1 class="font-display text-ratonet-primary text-sm uppercase tracking-wider mb-1">RatoNet</h1>
-            <p class="text-xs text-ratonet-textMuted" id="status-card-info">Streaming IRL Open Source</p>
-        </div>
-    </div>
+    <!-- ============================================================ -->
+    <!-- SIDEBAR TOGGLE BUTTON -->
+    <!-- ============================================================ -->
+    <button id="sidebar-toggle" onclick="toggleSidebar()"
+        class="w-8 h-10 bg-black/60 backdrop-blur-sm border border-white/5 border-r-0 rounded-l-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-black/80 transition-all shadow-lg">
+        <i id="sidebar-toggle-icon" class="fa-solid fa-chevron-left text-xs"></i>
+    </button>
 
-    <!-- Interface (Direita - Sidebar) -->
-    <div class="ui-layer top-0 right-0 h-full w-[340px] flex flex-col ui-interactive hidden md:flex">
-        <div class="flex-1 bg-ratonet-panel/95 backdrop-blur-xl border-l border-ratonet-border flex flex-col shadow-2xl pt-4">
-            
+    <!-- ============================================================ -->
+    <!-- SIDEBAR (direita, retrátil) -->
+    <!-- ============================================================ -->
+    <div id="sidebar-panel">
+        <div class="h-full bg-black/80 backdrop-blur-xl border-l border-white/5 flex flex-col shadow-2xl pt-9">
+
             <!-- Cabeçalho Sidebar -->
-            <div class="p-6 pb-4 border-b border-white/5">
-                <h2 class="font-display text-ratonet-primary text-lg uppercase tracking-wide">RatoNet</h2>
-                <p class="text-xs text-ratonet-textMuted mt-1" id="sidebar-subtitle">Aguardando streamers...</p>
+            <div class="p-5 pb-3 border-b border-white/5 flex items-center justify-between">
+                <div>
+                    <h2 class="font-display text-helios-sun text-sm uppercase tracking-wider">RatoNet</h2>
+                    <p class="text-[11px] text-white/40 mt-1 font-mono" id="sidebar-subtitle">Aguardando streamers...
+                    </p>
+                </div>
+                <button onclick="toggleSidebar()"
+                    class="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/40 hover:text-white transition-colors md:hidden">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
             </div>
 
             <!-- Lista de Streamers -->
-            <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-1" id="streamer-list">
+            <div class="flex-1 overflow-y-auto p-3 flex flex-col gap-0.5" id="streamer-list">
                 <!-- Injetado via JS -->
             </div>
 
             <!-- Rodapé da Sidebar -->
-            <div class="p-4 flex flex-col items-end gap-4 mt-auto">
-                <!-- Footer Ratonet -->
-                <div class="w-full pt-4 border-t border-white/5 text-center">
-                    <a href="https://ratonet.com.br" target="_blank" rel="noopener noreferrer" class="text-white/30 text-[10px] uppercase tracking-widest hover:text-ratonet-primary transition-colors">
+            <div class="p-4 mt-auto">
+                <div class="w-full pt-3 border-t border-white/5 text-center">
+                    <a href="https://ratonet.com.br" target="_blank" rel="noopener noreferrer"
+                        class="text-white/20 text-[9px] uppercase tracking-widest hover:text-helios-sun transition-colors">
                         Powered by <span class="font-display">RATONET</span>
                     </a>
                 </div>
@@ -196,35 +445,137 @@
         </div>
     </div>
 
-    <!-- Controles de Zoom Customizados (Bottom Right do Mapa) -->
-    <div class="ui-layer bottom-6 right-6 md:right-[360px] flex flex-col gap-2 ui-interactive">
-        <button id="zoom-in" class="w-10 h-10 bg-ratonet-panel/90 hover:bg-[#222] border border-white/10 rounded-lg flex items-center justify-center text-white transition-colors shadow-lg">
-            <i class="fa-solid fa-plus"></i>
+    <!-- ============================================================ -->
+    <!-- VIEW MODE SWITCHER (inferior central) -->
+    <!-- ============================================================ -->
+    <div
+        class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 p-1.5 bg-black/40 backdrop-blur-sm rounded-2xl border border-white/5 shadow-lg ui-interactive">
+        <button onclick="switchView('map')" id="view-btn-map"
+            class="relative group flex items-center gap-1.5 rounded-xl transition-all duration-200 border px-3 py-2 bg-white/10 border-white/20">
+            <i class="fa-solid fa-map text-sm leading-none"></i>
+            <span class="text-xs font-bold transition-colors duration-200 hidden sm:inline text-white/80">Mapa</span>
+            <div class="tooltip-hover">Mapa em tela cheia</div>
         </button>
-        <button id="zoom-out" class="w-10 h-10 bg-ratonet-panel/90 hover:bg-[#222] border border-white/10 rounded-lg flex items-center justify-center text-white transition-colors shadow-lg">
-            <i class="fa-solid fa-minus"></i>
+        <button onclick="switchView('eyerat')" id="view-btn-eyerat"
+            class="relative group flex items-center gap-1.5 rounded-xl transition-all duration-200 border px-3 py-2 bg-white/5 border-transparent hover:bg-white/10">
+            <i class="fa-solid fa-tv text-sm leading-none"></i>
+            <span
+                class="text-xs font-bold transition-colors duration-200 hidden sm:inline text-white/50 group-hover:text-white/80">eyeRat</span>
+            <div class="tooltip-hover">Grid de vigilância</div>
+        </button>
+        <button onclick="switchView('split')" id="view-btn-split"
+            class="relative group flex items-center gap-1.5 rounded-xl transition-all duration-200 border px-3 py-2 bg-white/5 border-transparent hover:bg-white/10">
+            <i class="fa-solid fa-bolt text-sm leading-none"></i>
+            <span
+                class="text-xs font-bold transition-colors duration-200 hidden sm:inline text-white/50 group-hover:text-white/80">Split</span>
+            <div class="tooltip-hover">Mapa + streams</div>
+        </button>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- CONTROLES DE ZOOM (canto inferior direito do mapa) -->
+    <!-- ============================================================ -->
+    <div id="zoom-controls" class="ui-layer bottom-6 flex flex-col gap-2 ui-interactive" style="right: 24px;">
+        <button id="zoom-in"
+            class="w-8 h-8 bg-black/40 hover:bg-white/10 border border-white/5 rounded-lg flex items-center justify-center text-white/60 hover:text-white transition-all backdrop-blur-sm shadow-lg">
+            <i class="fa-solid fa-plus text-xs"></i>
+        </button>
+        <button id="zoom-out"
+            class="w-8 h-8 bg-black/40 hover:bg-white/10 border border-white/5 rounded-lg flex items-center justify-center text-white/60 hover:text-white transition-all backdrop-blur-sm shadow-lg">
+            <i class="fa-solid fa-minus text-xs"></i>
         </button>
     </div>
 
     <!-- Container de Toasts/Notificações -->
-    <div id="toast-container" class="ui-layer bottom-10 left-1/2 -translate-x-1/2 flex flex-col gap-2 items-center z-[2000]"></div>
+    <div id="toast-container"
+        class="ui-layer bottom-10 left-1/2 -translate-x-1/2 flex flex-col gap-2 items-center z-[2000]"></div>
 
     <!-- Scripts Leaflet e Lógica -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script>
         // ============================================================
         // RatoNet Dashboard - Frontend com WebSocket em tempo real
         // ============================================================
 
-        // Sistema simples de Notificações (Toast) para o Modo Demo
-        function showDemoToast(featureName) {
+        // ============================================================
+        // Sidebar Toggle
+        // ============================================================
+        let sidebarOpen = false;
+        function toggleSidebar() {
+            sidebarOpen = !sidebarOpen;
+            const panel = document.getElementById('sidebar-panel');
+            const overlay = document.getElementById('sidebar-overlay');
+            const toggle = document.getElementById('sidebar-toggle');
+            const toggleIcon = document.getElementById('sidebar-toggle-icon');
+            const zoomControls = document.getElementById('zoom-controls');
+
+            if (sidebarOpen) {
+                panel.classList.add('sidebar-open');
+                overlay.classList.add('sidebar-open');
+                toggle.classList.add('sidebar-open');
+                toggleIcon.classList.remove('fa-chevron-left');
+                toggleIcon.classList.add('fa-chevron-right');
+                // Mover zoom controls para a esquerda da sidebar em desktop
+                if (window.innerWidth >= 768) {
+                    zoomControls.style.right = '364px';
+                }
+            } else {
+                panel.classList.remove('sidebar-open');
+                overlay.classList.remove('sidebar-open');
+                toggle.classList.remove('sidebar-open');
+                toggleIcon.classList.remove('fa-chevron-right');
+                toggleIcon.classList.add('fa-chevron-left');
+                zoomControls.style.right = '24px';
+            }
+            // Invalidar tamanho do mapa após a transição
+            setTimeout(() => map.invalidateSize(), 350);
+        }
+
+        // Abrir sidebar por padrão em desktop
+        if (window.innerWidth >= 768) {
+            toggleSidebar();
+        }
+
+        // View Mode Switcher
+        let currentView = 'map';
+        function switchView(mode) {
+            currentView = mode;
+            document.querySelectorAll('[id^="view-btn-"]').forEach(btn => {
+                btn.classList.remove('bg-white/10', 'border-white/20');
+                btn.classList.add('bg-white/5', 'border-transparent');
+                const label = btn.querySelector('span');
+                if (label) { label.classList.remove('text-white/80'); label.classList.add('text-white/50'); }
+            });
+            const active = document.getElementById('view-btn-' + mode);
+            if (active) {
+                active.classList.remove('bg-white/5', 'border-transparent');
+                active.classList.add('bg-white/10', 'border-white/20');
+                const label = active.querySelector('span');
+                if (label) { label.classList.remove('text-white/50'); label.classList.add('text-white/80'); }
+            }
+        }
+
+        // Header Clock
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            const el = document.getElementById('header-clock');
+            if (el) el.textContent = h + ':' + m + ' BRT';
+        }
+        updateClock();
+        setInterval(updateClock, 30000);
+
+        // Toast notifications
+        function showToast(title, subtitle) {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
 
-            toast.className = 'bg-[#111] border border-ratonet-primary text-white px-4 py-3 rounded-xl text-sm font-medium shadow-2xl backdrop-blur-md transform transition-all duration-300 translate-y-4 opacity-0 flex items-center gap-3';
+            toast.className = 'bg-black/80 border border-white/10 text-white px-4 py-3 rounded-xl text-sm font-medium shadow-2xl backdrop-blur-md transform transition-all duration-300 translate-y-4 opacity-0 flex items-center gap-3';
             toast.innerHTML = `
-                <div class="bg-ratonet-primary/20 p-2 rounded-lg text-ratonet-primary"><i class="fa-solid fa-person-digging"></i></div>
-                <div>A aba <span class="text-ratonet-primary font-bold">${featureName}</span> está em modo demo.<br><span class="text-xs text-white/60 font-normal">Integração funcional em breve!</span></div>
+                <div class="bg-helios-sun/20 p-2 rounded-lg text-helios-sun"><i class="fa-solid fa-circle-info"></i></div>
+                <div><span class="text-helios-sun font-bold">${title}</span><br><span class="text-xs text-white/60 font-normal">${subtitle}</span></div>
             `;
 
             container.appendChild(toast);
@@ -241,12 +592,12 @@
             }, 3500);
         }
 
-        // Estado global dos streamers (alimentado via WebSocket ou fallback)
+        // Estado global dos streamers
         let streamers = [];
         const markers = {};      // id → L.marker
         const polylines = {};    // id → L.polyline
 
-        // Mapa de ícones sociais (backend envia nomes simples, frontend converte para Font Awesome)
+        // Mapa de ícones sociais
         const socialIconMap = {
             'instagram': 'fa-instagram',
             'tiktok': 'fa-tiktok',
@@ -264,41 +615,62 @@
             maxZoom: 19,
         }).addTo(map);
 
-        // Controles de zoom customizados
+        // Controles de zoom
         document.getElementById('zoom-in').addEventListener('click', () => map.zoomIn());
         document.getElementById('zoom-out').addEventListener('click', () => map.zoomOut());
 
-        // Trail de posições reais por streamer (acumula GPS ao vivo)
-        const trails = {};  // streamer_id → [latLng, ...]
+        // Trail de posições
+        const trails = {};
         const MAX_TRAIL_POINTS = 500;
 
         const sidebarList = document.getElementById('streamer-list');
         const defaultAvatar = "https://ui-avatars.com/api/?background=random&color=fff&name=";
 
         // ============================================================
-        // Renderização de streamers (reutilizado por WebSocket e fallback)
+        // Atualizar telemetria no header + card
         // ============================================================
-
-        function renderStreamers(streamerList) {
-            // Se lista vazia, mostra estado vazio
-            if (!streamerList || streamerList.length === 0) {
-                renderEmptyState();
-                return;
-            }
-
-            // Limpa sidebar
-            sidebarList.innerHTML = '';
-
-            // Atualiza contadores
+        function updateTelemetry(streamerList) {
             const liveCount = streamerList.filter(s => s.is_live).length;
+            const totalViewers = liveCount; // placeholder, pode ser expandido
+            const avgSpeed = streamerList.length > 0
+                ? Math.round(streamerList.reduce((sum, s) => sum + (s.gps?.speed_kmh || 0), 0) / streamerList.length)
+                : 0;
+
+            // Header
+            const hStreamerCount = document.getElementById('header-streamer-count');
+            const hLiveCount = document.getElementById('header-live-count');
+            const hViewers = document.getElementById('header-viewers');
+            if (hStreamerCount) hStreamerCount.textContent = `${streamerList.length} streamer${streamerList.length !== 1 ? 's' : ''}`;
+            if (hLiveCount) hLiveCount.textContent = `${liveCount} ao vivo`;
+            if (hViewers) hViewers.textContent = `${liveCount} viewers`;
+
+            // Telemetry card
+            const tSpeed = document.getElementById('telemetry-speed');
+            const tCams = document.getElementById('telemetry-cams');
+            const tViewers = document.getElementById('telemetry-viewers');
+            if (tSpeed) tSpeed.textContent = `${avgSpeed} km/h`;
+            if (tCams) tCams.textContent = `${liveCount} ON`;
+            if (tViewers) tViewers.textContent = `${liveCount}`;
+
+            // Sidebar subtitle
             const sidebarSub = document.getElementById('sidebar-subtitle');
             if (sidebarSub) {
                 sidebarSub.textContent = `${streamerList.length} streamer${streamerList.length !== 1 ? 's' : ''} \u2022 ${liveCount} ao vivo`;
             }
-            const statusCard = document.getElementById('status-card-info');
-            if (statusCard) {
-                statusCard.textContent = `${liveCount} ao vivo`;
+        }
+
+        // ============================================================
+        // Renderização de streamers
+        // ============================================================
+        function renderStreamers(streamerList) {
+            if (!streamerList || streamerList.length === 0) {
+                renderEmptyState();
+                updateTelemetry([]);
+                return;
             }
+
+            sidebarList.innerHTML = '';
+            updateTelemetry(streamerList);
 
             streamerList.forEach((streamer, index) => {
                 const latLng = [streamer.gps.lat, streamer.gps.lng];
@@ -308,15 +680,13 @@
                 const healthScore = streamer.health ? streamer.health.score : null;
                 const healthState = streamer.health ? streamer.health.state : 'healthy';
 
-                // Cor do indicador de saúde
-                let healthColor = '#10b981'; // green
+                let healthColor = '#10b981';
                 if (healthState === 'degraded') healthColor = '#f59e0b';
                 else if (healthState === 'critical') healthColor = '#ef4444';
                 else if (healthState === 'down') healthColor = '#6b7280';
 
                 // --- Marcador no mapa ---
                 if (latLng[0] !== 0 || latLng[1] !== 0) {
-                    // Acumula trail real
                     if (!trails[streamer.id]) trails[streamer.id] = [];
                     const trail = trails[streamer.id];
                     const lastPt = trail.length > 0 ? trail[trail.length - 1] : null;
@@ -325,7 +695,6 @@
                         if (trail.length > MAX_TRAIL_POINTS) trail.shift();
                     }
 
-                    // Atualiza ou cria polyline
                     if (polylines[streamer.id]) {
                         polylines[streamer.id].setLatLngs(trail);
                     } else {
@@ -360,16 +729,15 @@
 
                 // --- Item na Sidebar ---
                 const socialHtml = socials.map(icon =>
-                    `<button class="social-btn" onclick="event.stopPropagation(); showDemoToast('Redes Sociais')"><i class="fa-brands ${icon}"></i></button>`
+                    `<button class="social-btn" onclick="event.stopPropagation()"><i class="fa-brands ${icon}"></i></button>`
                 ).join('');
 
-                // Health badge
                 const healthBadge = healthScore !== null
                     ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded" style="background: ${healthColor}20; color: ${healthColor}">${healthScore}%</span>`
                     : '';
 
                 const listItemHtml = `
-                    <div class="flex p-2.5 rounded-xl hover:bg-white/5 cursor-pointer transition-colors group" onclick="showDemoToast('Câmera de ${streamer.name.split(' ')[0]}')">
+                    <div class="flex p-2.5 rounded-xl hover:bg-white/5 cursor-pointer transition-colors group" onclick="map.setView([${latLng[0]}, ${latLng[1]}], 14)">
                         <div class="relative flex-shrink-0 mr-3">
                             <div class="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden" style="background-color: ${streamer.color}">
                                 <img src="${streamer.avatar_url}" onerror="this.onerror=null;this.src='${defaultAvatar + streamer.name}'" class="w-[36px] h-[36px] rounded-full object-cover border-2 border-black" alt="${streamer.name}">
@@ -381,8 +749,8 @@
                                 ${streamer.is_crown ? '<i class="fa-solid fa-crown text-yellow-500 text-[10px]" title="Host"></i>' : ''}
                             </div>
                             <div class="flex items-center flex-wrap gap-2">
-                                <span class="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">${streamer.is_live ? 'Live' : 'Offline'}</span>
-                                <span class="text-xs text-ratonet-textMuted">${speedText}</span>
+                                <span class="${streamer.is_live ? 'bg-red-600' : 'bg-white/10'} text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">${streamer.is_live ? 'Live' : 'Offline'}</span>
+                                <span class="text-xs text-white/40 font-mono">${speedText}</span>
                                 ${healthBadge}
                             </div>
                             ${socialHtml ? `<div class="flex gap-1.5 mt-2">${socialHtml}</div>` : ''}
@@ -394,9 +762,8 @@
         }
 
         // ============================================================
-        // WebSocket - Conexão com o backend RatoNet
+        // WebSocket
         // ============================================================
-
         let ws = null;
         let wsReconnectTimer = null;
 
@@ -437,7 +804,6 @@
                     } else if (msg.type === 'streamer_offline' && msg.data.streamer_id) {
                         const idx = streamers.findIndex(s => s.id === msg.data.streamer_id);
                         if (idx !== -1) {
-                            // Remove marcador e rota do mapa
                             if (markers[msg.data.streamer_id]) {
                                 map.removeLayer(markers[msg.data.streamer_id]);
                                 delete markers[msg.data.streamer_id];
@@ -471,21 +837,18 @@
         // ============================================================
         // Banner de status + estado vazio
         // ============================================================
-
         function updateBanner(state) {
             const banner = document.querySelector('#status-banner > div');
             if (!banner) return;
             const span = banner.querySelector('span');
             const icon = banner.querySelector('i');
 
-            // Remove classes anteriores
             banner.className = 'backdrop-blur-md px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 shadow-lg';
 
             if (state === 'connected') {
                 banner.classList.add('bg-green-500/10', 'border', 'border-green-500/30', 'text-green-400');
                 icon.className = 'fa-solid fa-signal text-sm';
                 span.textContent = 'Conectado ao servidor — dados em tempo real';
-                // Esconde banner após 3s
                 setTimeout(() => { document.getElementById('status-banner').style.display = 'none'; }, 3000);
             } else if (state === 'disconnected') {
                 banner.classList.add('bg-yellow-500/10', 'border', 'border-yellow-500/30', 'text-yellow-400');
@@ -515,7 +878,7 @@
             `;
         }
 
-        // Fallback via API REST (sem WebSocket)
+        // Fallback API REST
         async function fetchStreamersFromAPI() {
             try {
                 const resp = await fetch('/api/streamers');
@@ -529,7 +892,7 @@
                     renderEmptyState();
                     updateBanner('empty');
                 }
-            } catch(e) {
+            } catch (e) {
                 console.log('[RatoNet] API também indisponível:', e.message);
                 renderEmptyState();
                 updateBanner('empty');
@@ -539,16 +902,13 @@
         // ============================================================
         // Inicialização
         // ============================================================
-
-        // Tenta conectar via WebSocket
         try {
             connectWebSocket();
-        } catch(e) {
+        } catch (e) {
             console.log('[RatoNet] WebSocket indisponível, tentando API...');
             fetchStreamersFromAPI();
         }
 
-        // Se após 3s não recebeu dados do WS, tenta via API REST
         setTimeout(() => {
             if (streamers.length === 0) {
                 console.log('[RatoNet] Timeout WebSocket, buscando via API...');
@@ -556,8 +916,8 @@
             }
         }, 3000);
 
-        // Centraliza no mundo — faz zoom nos streamers quando eles aparecerem
         map.setView([0, 0], 3);
     </script>
 </body>
+
 </html>
