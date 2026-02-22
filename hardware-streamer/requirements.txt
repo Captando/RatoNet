@@ -1,0 +1,6 @@
+websockets>=12.0
+pydantic>=2.0
+pydantic-settings>=2.0
+psutil>=5.9
+gpsdclient>=1.3
+python-dotenv>=1.0
