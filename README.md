@@ -127,10 +127,13 @@ Guia completo para o streamer montar seu setup IRL solo:
 | **Huawei E3372h** | Modem USB 4G | Barato, plug-and-play no Linux. Use 2-4 unidades com chips de operadoras diferentes. |
 | **Quectel RM520N** | Modem 5G M.2 | Alta performance, precisa de adaptador USB |
 | **GL.iNet Mudi V2 (GL-E750V2)** | Roteador 4G portátil | Tem bateria própria, OpenWrt, bom para setup compacto |
+| **NanoPi NEO3 Plus + Fibocom FM350-GL** | Gateway 5G DIY | Opção 5G barata (FM350-GL ~US$40, módulo de notebook). Imagem FriendlyWrt pronta com painel LuCI: [nanopi-fm350-manager](https://github.com/msaulohenrique/nanopi-fm350-manager). Entrega a internet pela porta RJ45 (NAT), então conta como 1 link Ethernet por unidade. |
 | **Starlink Mini** | Internet satelital | Backup para áreas sem 4G. ~1kg, alimenta via USB-C PD. |
 | **Peplink MAX BR1** | Roteador bonding | Bonding nativo por hardware (alternativa cara ao SRTLA) |
 
 > **Dica:** Para bonding, use **2-4 chips de operadoras diferentes** (ex: Claro + Vivo + Tim + Oi). O SRTLA distribui pacotes entre todos os links automaticamente.
+
+> **Atenção com gateways (Mudi, NanoPi, Peplink):** eles chegam no encoder como interface **Ethernet**, não como modem. Para bonding com mais de um, cada gateway precisa de um adaptador USB-Ethernet no encoder e de alimentação própria. O RSRP/SINR fica no painel do próprio gateway, não na telemetria do RatoNet.
 
 ### GPS
 
