@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import re
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from typing import TYPE_CHECKING, List, Optional
 
 from ratonet.common.logger import get_logger
 
 if TYPE_CHECKING:
-    from ratonet.field.bonding import NetworkBonding
+    from ratonet.field.bonding import SRTLASender
 
 log = get_logger("encoder")
 
@@ -29,7 +31,7 @@ class SRTEncoder:
         codec: str = "libx264",
         fps: int = 30,
         srt_url: Optional[str] = None,
-        bonding: Optional[NetworkBonding] = None,
+        bonding: Optional[SRTLASender] = None,
         latency_ms: int = 500,
         passphrase: str = "",
     ) -> None:
@@ -46,11 +48,15 @@ class SRTEncoder:
         self._process: Optional[asyncio.subprocess.Process] = None
         self._running = False
         self._restart_count = 0
-        self._max_restarts = 10
+        self._monitor_task = None
+        self._stderr_task = None
 
     def _build_command(self) -> List[str]:
         """Constrói a linha de comando do FFmpeg."""
-        width, height = self.resolution.split("x")
+        match = re.fullmatch(r"(\d+)([kKmM]?)", self.bitrate)
+        if not match:
+            raise ValueError("Bitrate inválido; use 4000k ou 4M")
+        bitrate = int(match[1]) * {"": 1, "k": 1000, "m": 1000000}[match[2].lower()]
 
         cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning"]
 
@@ -66,7 +72,7 @@ class SRTEncoder:
         elif self.device == "testsrc":
             # Fonte de teste (para desenvolvimento)
             cmd += [
-                "-f", "lavfi",
+                "-re", "-f", "lavfi",
                 "-i", f"testsrc=size={self.resolution}:rate={self.fps}",
                 "-f", "lavfi",
                 "-i", f"sine=frequency=1000:sample_rate=48000",
@@ -82,7 +88,8 @@ class SRTEncoder:
             "-tune", "zerolatency",
             "-b:v", self.bitrate,
             "-maxrate", self.bitrate,
-            "-bufsize", f"{int(self.bitrate.replace('k', '000')) * 2}",
+            "-bufsize", str(bitrate * 2),
+            "-pix_fmt", "yuv420p",
             "-g", str(self.fps * 2),  # GOP = 2 segundos
             "-c:a", "aac",
             "-b:a", "128k",
@@ -91,13 +98,15 @@ class SRTEncoder:
 
         # Output SRT
         output_url = self._get_output_url()
-        srt_params = f"latency={self.latency_ms * 1000}"
+        parts = urlsplit(output_url if output_url.startswith("srt://") else "srt://" + output_url)
+        params = dict(parse_qsl(parts.query))
+        params.update({"latency": str(self.latency_ms * 1000), "mode": "caller"})
         if self.passphrase:
-            srt_params += f"&passphrase={self.passphrase}"
+            params.update({"passphrase": self.passphrase, "pbkeylen": "16"})
 
         cmd += [
             "-f", "mpegts",
-            f"srt://{output_url}?{srt_params}",
+            urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(params), "")),
         ]
 
         return cmd
@@ -113,54 +122,64 @@ class SRTEncoder:
             if url:
                 return url
 
-        return "localhost:9000"
+        raise ValueError("Destino SRT não negociado")
 
     async def start(self) -> None:
         """Inicia o encoder FFmpeg."""
         if not shutil.which("ffmpeg"):
-            log.error("FFmpeg não encontrado no PATH!")
-            return
+            raise RuntimeError("FFmpeg não encontrado no PATH")
 
         self._running = True
         self._restart_count = 0
         await self._launch()
 
         # Monitor de saúde em background
-        asyncio.create_task(self._health_monitor())
+        self._monitor_task = asyncio.create_task(self._health_monitor())
 
     async def stop(self) -> None:
         """Para o encoder."""
         self._running = False
-        if self._process:
+        if self._monitor_task:
+            self._monitor_task.cancel()
+            await asyncio.gather(self._monitor_task, return_exceptions=True)
+            self._monitor_task = None
+        if self._process and self._process.returncode is None:
             self._process.terminate()
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=5)
             except asyncio.TimeoutError:
                 self._process.kill()
+                await self._process.wait()
             self._process = None
+        if self._stderr_task:
+            self._stderr_task.cancel()
+            await asyncio.gather(self._stderr_task, return_exceptions=True)
+            self._stderr_task = None
         log.info("Encoder parado")
 
     async def _launch(self) -> None:
         """Lança processo FFmpeg."""
         cmd = self._build_command()
-        log.info("Iniciando FFmpeg: %s", " ".join(cmd))
+        log.info("Iniciando encoder FFmpeg")
 
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
         log.info("FFmpeg PID: %d", self._process.pid)
 
         # Log stderr em background
-        asyncio.create_task(self._log_stderr())
+        self._stderr_task = asyncio.create_task(self._log_stderr())
 
     async def _log_stderr(self) -> None:
         """Loga stderr do FFmpeg."""
         if not self._process or not self._process.stderr:
             return
         async for line in self._process.stderr:
-            text = line.decode().strip()
+            text = line.decode(errors="replace").strip()
+            if self.passphrase:
+                text = text.replace(self.passphrase, "***")
             if text:
                 log.debug("[FFmpeg] %s", text)
 
@@ -179,17 +198,13 @@ class SRTEncoder:
                     break
 
                 self._restart_count += 1
-                if self._restart_count > self._max_restarts:
-                    log.error("FFmpeg excedeu máximo de restarts (%d)", self._max_restarts)
-                    self._running = False
-                    break
-
                 log.warning(
-                    "FFmpeg morreu (code %d), reiniciando (%d/%d)...",
-                    retcode, self._restart_count, self._max_restarts,
+                    "FFmpeg morreu (code %d), reiniciando (tentativa %d)...",
+                    retcode, self._restart_count,
                 )
-                await asyncio.sleep(2)
-                await self._launch()
+                await asyncio.sleep(min(self._restart_count * 2, 15))
+                if self._running:
+                    await self._launch()
 
     @property
     def is_running(self) -> bool:

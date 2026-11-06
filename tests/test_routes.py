@@ -9,16 +9,23 @@ from httpx import ASGITransport, AsyncClient
 from ratonet.dashboard.main import app
 from ratonet.dashboard import db
 from ratonet.config import settings
+from ratonet.dashboard.ws_handler import manager
+from unittest.mock import AsyncMock
+from datetime import datetime, timedelta, timezone
 
 
 @pytest.fixture(autouse=True)
-async def setup_db(tmp_path):
+async def setup_db(tmp_path, monkeypatch):
     """Configura banco temporário para cada teste."""
     db_path = str(tmp_path / "test.db")
     settings.database.path = db_path
     await db.init_db(db_path)
+    monkeypatch.setattr(manager, '_update_location', AsyncMock())
     yield
+    await manager.stop()
     settings.database.path = "ratonet.db"
+    settings.database.auto_approve = False
+    settings.admin.token = ""
 
 
 @pytest.fixture
@@ -217,3 +224,52 @@ async def test_admin_stats(client):
 
     settings.admin.token = ""
     settings.database.auto_approve = False
+
+
+async def test_public_profile_contains_no_secrets(client):
+    s = await db.create_streamer('Public', 'secret@example.com', auto_approve=True, db_path=settings.database.path)
+    await db.update_streamer(s['id'], db_path=settings.database.path, config={
+        'stream_destinations': [{'rtmp_url': 'rtmp://example.com/live/secret'}], 'livepix_token': 'secret-token'})
+    response = await client.get(f"/api/streamers/{s['id']}")
+    assert response.status_code == 200
+    assert {'email', 'api_key', 'pull_key', 'config'}.isdisjoint(response.json())
+    assert 'secret' not in response.text
+
+
+@pytest.mark.parametrize('path', ['%2e%2e/%2e%2e/pyproject.toml', '%2e%2e/%2e%2e/.env', '%2e%2e/%2e%2e/ratonet.db'])
+async def test_pwa_cannot_escape_static_directory(client, path):
+    response = await client.get('/pwa/' + path)
+    assert response.status_code == 404
+
+
+async def test_pwa_shell_and_worker_are_served_in_same_scope(client):
+    for path in ('/pwa/', '/pwa/tracker.html', '/pwa/sw.js', '/pwa/queue.js'):
+        assert (await client.get(path)).status_code == 200
+
+
+async def test_pending_streamer_cannot_push_gps(client):
+    s = await db.create_streamer('Pending', 'pending@example.com', db_path=settings.database.path)
+    response = await client.post('/api/location', params={'streamer_id': s['id'], 'api_key': s['api_key']}, json={'lat': 1, 'lng': 2})
+    assert response.status_code == 403
+    assert s['id'] not in manager.streamers
+
+
+async def test_gps_replay_cannot_move_live_location_backwards(client):
+    s = await db.create_streamer('GPS', 'gps@example.com', auto_approve=True, db_path=settings.database.path)
+    params = {'streamer_id': s['id'], 'api_key': s['api_key']}
+    now = datetime.now(timezone.utc)
+    response = await client.post('/api/location', params=params, json={'lat': 1, 'lng': 2, 'recorded_at': now.isoformat()})
+    assert response.json()['accepted'] is True
+    for age in (10, 3600):
+        response = await client.post('/api/location', params=params, json={
+            'lat': 3, 'lng': 4, 'recorded_at': (now - timedelta(seconds=age)).isoformat()})
+        assert response.json()['accepted'] is False
+    assert manager.streamers[s['id']].gps.lat == 1
+
+
+@pytest.mark.parametrize('url', ['/app/file.flv', 'file:///app/file', 'rtmp://example.com/key|/tmp/file', 'http://example.com'])
+async def test_destination_rejects_non_rtmp_and_tee_injection(client, url):
+    s = await db.create_streamer('Dest', 'dest@example.com', db_path=settings.database.path)
+    response = await client.put('/api/me/destinations', params={'api_key': s['api_key']},
+                                json=[{'platform': 'custom', 'rtmp_url': url}])
+    assert response.status_code == 422

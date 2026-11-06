@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -11,10 +11,10 @@ from ratonet.config import settings
 from ratonet.dashboard import db
 from datetime import datetime, timezone
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ratonet.dashboard.geocoder import get_cached_location
-from ratonet.dashboard.models import DashboardUpdate, GPSPosition, ProfileUpdate, RegisterRequest, RegisterResponse, StreamDestination
+from ratonet.dashboard.models import DashboardUpdate, GPSPosition, ProfileUpdate, RegisterRequest, RegisterResponse, StreamDestination, StreamerPublic
 from ratonet.dashboard.ws_handler import manager
 
 log = get_logger("routes")
@@ -226,7 +226,7 @@ async def get_streamers():
     return result
 
 
-@router.get("/streamers/{streamer_id}")
+@router.get("/streamers/{streamer_id}", response_model=StreamerPublic)
 async def get_streamer(streamer_id: str):
     """Retorna dados de um streamer específico."""
     s = await db.get_streamer_by_id(streamer_id, db_path=settings.database.path)
@@ -235,7 +235,7 @@ async def get_streamer(streamer_id: str):
     if not s["approved"]:
         raise HTTPException(status_code=403, detail="Streamer não aprovado")
 
-    result = {k: v for k, v in s.items() if k != "api_key"}
+    result = StreamerPublic.model_validate(s).model_dump(mode="json")
     live = manager.streamers.get(streamer_id)
     if live:
         result["is_live"] = True
@@ -287,12 +287,13 @@ async def get_overlay_data(
 # --- Location push (REST fallback para PWA) ---
 
 class LocationPush(BaseModel):
-    lat: float
-    lng: float
+    lat: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    lng: float = Field(ge=-180, le=180, allow_inf_nan=False)
     speed_kmh: float = 0.0
     altitude_m: float = 0.0
     heading: float = 0.0
     accuracy_m: float = 0.0
+    recorded_at: Optional[datetime] = None
 
 
 @router.post("/location")
@@ -305,45 +306,22 @@ async def push_location(
     streamer_db = await db.get_streamer_by_api_key(api_key, db_path=settings.database.path)
     if not streamer_db or streamer_db["id"] != streamer_id:
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
+    if not streamer_db["approved"]:
+        raise HTTPException(status_code=403, detail="Streamer não aprovado")
 
-    live = manager.streamers.get(streamer_id)
-    if not live:
-        # Cria streamer ao vivo temporário (PWA pode ser a única fonte)
-        from ratonet.dashboard.models import Streamer
-        live = Streamer(
-            id=streamer_db["id"],
-            name=streamer_db["name"],
-            avatar_url=streamer_db.get("avatar_url", ""),
-            color=streamer_db.get("color", "#ff6600"),
-            is_crown=streamer_db.get("is_crown", False),
-            socials=streamer_db.get("socials", []),
-            is_live=True,
-        )
-        manager.streamers[streamer_id] = live
-        # Notifica dashboards
-        update = DashboardUpdate(
-            type="streamer_online",
-            data={"streamer": live.model_dump(mode="json")},
-        )
-        await manager.broadcast_to_dashboards(update)
-
-    live.gps = GPSPosition(
-        lat=location.lat,
-        lng=location.lng,
-        speed_kmh=location.speed_kmh,
-        altitude_m=location.altitude_m,
-        heading=location.heading,
-    )
-    live.updated_at = datetime.now(timezone.utc)
-
-    # Broadcast para dashboards
-    update = DashboardUpdate(
-        type="streamer_update",
-        data={"streamer_id": streamer_id, "streamer": live.model_dump(mode="json")},
-    )
-    await manager.broadcast_to_dashboards(update)
-
-    return {"message": "Localização atualizada", "lat": location.lat, "lng": location.lng}
+    now = datetime.now(timezone.utc)
+    recorded_at = location.recorded_at or now
+    if recorded_at.tzinfo is None:
+        recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+    age = (now - recorded_at).total_seconds()
+    if age > 60 or age < -30:
+        return {"accepted": False, "message": "Ponto fora da janela ao vivo"}
+    manager.ensure_streamer(streamer_db)
+    accepted = await manager.update_gps(
+        streamer_id, GPSPosition(**location.model_dump()), recorded_at)
+    if accepted:
+        await manager.broadcast_streamer(streamer_id)
+    return {"accepted": accepted, "message": "Localização processada"}
 
 
 @router.get("/health")

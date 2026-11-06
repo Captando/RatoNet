@@ -132,12 +132,16 @@
 <script>
 // Registra Service Worker
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/static/pwa/sw.js').catch(() => {});
+  navigator.serviceWorker.register('/pwa/sw.js', { scope: '/pwa/' }).catch(() => {});
 }
 
 const form = document.getElementById('loginForm');
 const $error = document.getElementById('error');
 const $btn = document.getElementById('btnLogin');
+if (!window.isSecureContext) {
+  $error.textContent = 'GPS e instalação offline exigem HTTPS. Use o endereço seguro do servidor.';
+  $btn.disabled = true;
+}
 
 // Auto-preenche se já logou antes
 const saved = JSON.parse(localStorage.getItem('ratonet_creds') || 'null');
@@ -173,6 +177,7 @@ form.addEventListener('submit', async (e) => {
     if (profile.id !== streamerId) {
       throw new Error('Streamer ID não corresponde à API key');
     }
+    if (!profile.approved) throw new Error('Cadastro aguardando aprovação do administrador');
 
     // Salva credenciais
     const creds = { serverUrl, streamerId, apiKey, name: profile.name };

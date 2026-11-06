@@ -303,7 +303,7 @@ def step_summary(config: Dict[str, str]) -> None:
     print()
     print("  Ou simplesmente (lê do .env):")
     print()
-    print("    python -m ratonet.field.main --id $FIELD_STREAMER_ID --key $FIELD_API_KEY")
+    print("    python -m ratonet.field.main")
     print()
     print("  Dica: para habilitar vídeo, adicione --video")
     print()

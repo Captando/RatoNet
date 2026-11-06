@@ -1,12 +1,13 @@
 /**
  * RatoNet GPS Tracker — Service Worker
- * Cache shell + enfileira GPS points quando offline.
+ * Cache shell. The client persists GPS points in IndexedDB.
  */
 
-const CACHE_NAME = 'ratonet-pwa-v1';
+const CACHE_NAME = 'ratonet-pwa-v2';
 const SHELL_URLS = [
   '/pwa/',
   '/pwa/tracker.html',
+  '/pwa/queue.js',
   '/static/pwa/manifest.json',
 ];
 
@@ -22,7 +23,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => k.startsWith('ratonet-pwa-') && k !== CACHE_NAME).map((k) => caches.delete(k)))
     )
   );
   self.clients.claim();
@@ -33,7 +34,9 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
 
   // API calls: network only (não cacheia dados dinâmicos)
-  if (request.url.includes('/api/')) {
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin ||
+      !(url.pathname.startsWith('/pwa/') || url.pathname.startsWith('/static/pwa/'))) {
     return;
   }
 
@@ -50,18 +53,3 @@ self.addEventListener('fetch', (event) => {
       .catch(() => caches.match(request))
   );
 });
-
-// --- Background Sync: envia GPS enfileirado ---
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'gps-queue') {
-    event.waitUntil(flushGPSQueue());
-  }
-});
-
-async function flushGPSQueue() {
-  // Lê fila do IndexedDB via mensagem para o client
-  const clients = await self.clients.matchAll();
-  for (const client of clients) {
-    client.postMessage({ type: 'flush-gps-queue' });
-  }
-}

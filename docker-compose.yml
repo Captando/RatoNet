@@ -2,9 +2,8 @@ services:
   ratonet:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
       - "9000-9099:9000-9099/udp"  # SRT (até 25 streamers × 4 links)
-      - "5001:5001/udp"            # SRTLA receiver
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env:ro
@@ -12,3 +11,22 @@ services:
       - DB_PATH=/app/data/ratonet.db
       - DASHBOARD_STATIC_DIR=/app
     restart: unless-stopped
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["https"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      RATONET_DOMAIN: ${RATONET_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - ratonet
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,6 +1,6 @@
 # Pasta para hardware do streamer
 
-Este diretório contém apenas o necessário para rodar o **Field Agent** no hardware de campo.
+O código do Field Agent tem uma única fonte em `ratonet/field/`. Este diretório contém a configuração e a lista de dependências para gerar uma distribuição leve.
 
 ## O que está incluso
 
@@ -10,15 +10,28 @@ Este diretório contém apenas o necessário para rodar o **Field Agent** no har
 - `requirements.txt`
 - `.env.example`
 
-## Instalação no hardware
+## Gerar o pacote para o hardware
+
+Na raiz do repositório:
 
 ```bash
-cd hardware-streamer
+python3 scripts/build_field_bundle.py
+```
+
+Copie `dist/ratonet-field.tar.gz` para o equipamento. O pacote contém somente o agente, os módulos compartilhados e sua configuração, sem copiar segredos ou ambientes virtuais.
+
+## Instalação do pacote no hardware
+
+```bash
+tar -xzf ratonet-field.tar.gz
+cd ratonet-field
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 ```
+
+Em um clone completo, instale com `pip install -e .` na raiz e execute o mesmo módulo. Não é necessário gerar o pacote nesse caso.
 
 ## Configuração guiada (recomendado)
 

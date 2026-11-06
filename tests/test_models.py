@@ -33,10 +33,10 @@ def test_gps_position_serialization():
 
 
 def test_health_status_defaults():
-    """HealthStatus tem score 100 e estado HEALTHY."""
+    """No video evidence must never appear healthy."""
     h = HealthStatus()
-    assert h.score == 100
-    assert h.state == HealthState.HEALTHY
+    assert h.score == 0
+    assert h.state == HealthState.UNKNOWN
 
 
 def test_streamer_model():
@@ -45,7 +45,7 @@ def test_streamer_model():
     assert s.is_live is False
     assert s.location_name == ""
     assert s.gps.lat == 0.0
-    assert s.health.score == 100
+    assert s.health.state == HealthState.UNKNOWN
     data = s.model_dump()
     assert data["id"] == "test-id"
 

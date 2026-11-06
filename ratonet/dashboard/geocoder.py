@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 from typing import Dict, Optional, Tuple
 
 from ratonet.common.logger import get_logger
+import httpx
 
 log = get_logger("geocoder")
 
 # Cache: streamer_id → (lat, lng, timestamp, location_name)
 _cache: Dict[str, Tuple[float, float, float, str]] = {}
+_request_lock = asyncio.Lock()
+_last_request = 0.0
 
 # Re-query se moveu mais de 150m ou mais de 5 minutos
 _DISTANCE_THRESHOLD_M = 150.0
@@ -58,17 +62,21 @@ async def reverse_geocode(streamer_id: str, lat: float, lng: float) -> Optional[
     if not _should_update(streamer_id, lat, lng):
         return _cache[streamer_id][3]
 
+    global _last_request
     try:
-        import urllib.request
-        import json
-
-        url = (
-            f"https://nominatim.openstreetmap.org/reverse"
-            f"?lat={lat}&lon={lng}&format=json&zoom=14&addressdetails=1"
-        )
-        req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode())
+        async with _request_lock:
+            if not _should_update(streamer_id, lat, lng):
+                return _cache[streamer_id][3]
+            await asyncio.sleep(max(0, 1.1 - (time.monotonic() - _last_request)))
+            _last_request = time.monotonic()
+            async with httpx.AsyncClient(timeout=5) as client:
+                response = await client.get(
+                    "https://nominatim.openstreetmap.org/reverse",
+                    params={"lat": lat, "lon": lng, "format": "json", "zoom": 14, "addressdetails": 1},
+                    headers={"User-Agent": _USER_AGENT},
+                )
+                response.raise_for_status()
+                data = response.json()
 
         address = data.get("address", {})
         parts = []

@@ -114,7 +114,9 @@ tailwind.config = {
   </div>
 </div>
 
+<script src="/static/js/dom.js"></script>
 <script>
+const { escapeHTML: esc, safeURL, color: safeColor } = RatoNetUI;
 let TOKEN = '';
 let allStreamers = [];
 let currentFilter = 'all';
@@ -200,7 +202,7 @@ function renderStreamers() {
   if (list.length === 0) { container.innerHTML = '<p class="text-center text-gray-500 py-8">Nenhum streamer encontrado</p>'; return; }
 
   container.innerHTML = list.map(s => {
-    const avatar = s.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=ff6600&color=fff&size=32`;
+    const avatar = safeURL(s.avatar_url) || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=ff6600&color=fff&size=32`;
     const statusBadge = s.approved
       ? '<span class="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">Aprovado</span>'
       : '<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400">Pendente</span>';
@@ -209,17 +211,17 @@ function renderStreamers() {
     const crownIcon = s.is_crown ? '<i class="fas fa-crown text-yellow-400 ml-1"></i>' : '';
 
     let actions = '';
-    if (!s.approved) actions += `<button onclick="approveStreamer('${s.id}')" class="text-green-400 hover:text-green-300 text-xs px-2 py-1 rounded border border-green-400/30 hover:bg-green-400/10"><i class="fas fa-check mr-1"></i>Aprovar</button>`;
-    actions += `<button onclick="toggleCrown('${s.id}')" class="text-yellow-400 hover:text-yellow-300 text-xs px-2 py-1 rounded border border-yellow-400/30 hover:bg-yellow-400/10"><i class="fas fa-crown"></i></button>`;
-    actions += `<button onclick="removeStreamer('${s.id}', '${s.name.replace(/'/g, "\\'")}')" class="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded border border-red-400/30 hover:bg-red-400/10"><i class="fas fa-trash"></i></button>`;
+    if (!s.approved) actions += `<button data-action="approve" data-id="${esc(s.id)}" class="text-green-400 hover:text-green-300 text-xs px-2 py-1 rounded border border-green-400/30 hover:bg-green-400/10"><i class="fas fa-check mr-1"></i>Aprovar</button>`;
+    actions += `<button data-action="crown" data-id="${esc(s.id)}" class="text-yellow-400 hover:text-yellow-300 text-xs px-2 py-1 rounded border border-yellow-400/30 hover:bg-yellow-400/10"><i class="fas fa-crown"></i></button>`;
+    actions += `<button data-action="remove" data-id="${esc(s.id)}" class="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded border border-red-400/30 hover:bg-red-400/10"><i class="fas fa-trash"></i></button>`;
 
     return `
       <div class="bg-card border border-border rounded-lg p-4 flex flex-col md:flex-row md:items-center gap-3">
         <div class="flex items-center gap-3 flex-1 min-w-0">
-          <img src="${avatar}" class="w-8 h-8 rounded-full" style="border: 2px solid ${s.color || '#ff6600'}">
+          <img src="${esc(avatar)}" class="w-8 h-8 rounded-full" style="border: 2px solid ${safeColor(s.color)}">
           <div class="min-w-0">
-            <p class="font-semibold text-sm truncate">${s.name}${crownIcon}</p>
-            <p class="text-xs text-gray-500 truncate">${s.email || ''}</p>
+            <p class="font-semibold text-sm truncate">${esc(s.name)}${crownIcon}</p>
+            <p class="text-xs text-gray-500 truncate">${esc(s.email)}</p>
           </div>
         </div>
         <div class="flex items-center gap-2 flex-wrap">${statusBadge}${liveBadge}</div>
@@ -227,6 +229,16 @@ function renderStreamers() {
       </div>`;
   }).join('');
 }
+
+document.getElementById('streamers-table').addEventListener('click', event => {
+  const button = event.target.closest('button[data-action]');
+  if (!button) return;
+  const streamer = allStreamers.find(s => s.id === button.dataset.id);
+  if (!streamer) return;
+  if (button.dataset.action === 'approve') approveStreamer(streamer.id);
+  if (button.dataset.action === 'crown') toggleCrown(streamer.id);
+  if (button.dataset.action === 'remove') removeStreamer(streamer.id, streamer.name);
+});
 
 async function approveStreamer(id) {
   const r = await fetch(`/api/admin/streamers/${id}/approve`, { method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` } });
@@ -286,7 +298,7 @@ function renderMonitor() {
     const s = liveStreamers[id];
     return `<div class="bg-card border border-border rounded-lg px-4 py-2 flex items-center gap-3">
       <span class="w-2 h-2 rounded-full bg-green-400"></span>
-      <span class="text-sm">${s.name}</span>
+      <span class="text-sm">${esc(s.name)}</span>
       <span class="text-xs text-gray-500 ml-auto">Health: ${s.health?.score ?? '--'}</span>
     </div>`;
   }).join('');
@@ -299,15 +311,15 @@ function renderMonitor() {
     const stateColor = { healthy: 'text-green-400', degraded: 'text-yellow-400', critical: 'text-red-400', down: 'text-gray-500' }[h.state] || 'text-gray-400';
 
     const links = (s.network_links || []).map(l =>
-      `<span class="inline-flex items-center gap-1 text-xs ${l.connected ? 'text-green-400' : 'text-gray-500'}"><span class="w-1.5 h-1.5 rounded-full ${l.connected ? 'bg-green-400' : 'bg-gray-600'}"></span>${l.interface}</span>`
+      `<span class="inline-flex items-center gap-1 text-xs ${l.connected ? 'text-green-400' : 'text-gray-500'}"><span class="w-1.5 h-1.5 rounded-full ${l.connected ? 'bg-green-400' : 'bg-gray-600'}"></span>${esc(l.interface)}</span>`
     ).join(' ');
 
     return `
       <div class="bg-card border border-border rounded-xl p-4">
         <div class="flex items-center gap-3 mb-3">
           <span class="w-2 h-2 rounded-full bg-green-400"></span>
-          <h3 class="font-semibold">${s.name}</h3>
-          <span class="${stateColor} text-xs ml-auto font-semibold uppercase">${h.state || '?'}</span>
+          <h3 class="font-semibold">${esc(s.name)}</h3>
+          <span class="${stateColor} text-xs ml-auto font-semibold uppercase">${esc(h.state || '?')}</span>
         </div>
         <div class="grid grid-cols-2 gap-3 text-sm">
           <div>

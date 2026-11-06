@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RatoNet - Streaming IRL</title>
+    <script src="/static/js/dom.js"></script>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -575,7 +576,7 @@
             toast.className = 'bg-black/80 border border-white/10 text-white px-4 py-3 rounded-xl text-sm font-medium shadow-2xl backdrop-blur-md transform transition-all duration-300 translate-y-4 opacity-0 flex items-center gap-3';
             toast.innerHTML = `
                 <div class="bg-helios-sun/20 p-2 rounded-lg text-helios-sun"><i class="fa-solid fa-circle-info"></i></div>
-                <div><span class="text-helios-sun font-bold">${title}</span><br><span class="text-xs text-white/60 font-normal">${subtitle}</span></div>
+                <div><span class="text-helios-sun font-bold">${RatoNetUI.escapeHTML(title)}</span><br><span class="text-xs text-white/60 font-normal">${RatoNetUI.escapeHTML(subtitle)}</span></div>
             `;
 
             container.appendChild(toast);
@@ -673,15 +674,19 @@
             updateTelemetry(streamerList);
 
             streamerList.forEach((streamer, index) => {
-                const latLng = [streamer.gps.lat, streamer.gps.lng];
-                const speed = streamer.gps.speed_kmh;
+                const latLng = [streamer.gps?.lat || 0, streamer.gps?.lng || 0];
+                const speed = streamer.gps?.speed_kmh || 0;
+                const safeName = RatoNetUI.escapeHTML(streamer.name);
+                const safeColor = RatoNetUI.color(streamer.color);
+                const safeAvatar = RatoNetUI.escapeHTML(RatoNetUI.safeURL(streamer.avatar_url) || defaultAvatar + encodeURIComponent(streamer.name));
                 const speedText = speed > 0 ? `${Math.round(speed)} km/h` : '0 km/h';
-                const socials = (streamer.socials || []).map(s => socialIconMap[s] || `fa-${s}`);
+                const socials = (streamer.socials || []).map(s => socialIconMap[s]).filter(Boolean);
                 const healthScore = streamer.health ? streamer.health.score : null;
-                const healthState = streamer.health ? streamer.health.state : 'healthy';
+                const healthState = streamer.health ? streamer.health.state : 'unknown';
 
-                let healthColor = '#10b981';
-                if (healthState === 'degraded') healthColor = '#f59e0b';
+                let healthColor = '#6b7280';
+                if (healthState === 'healthy') healthColor = '#10b981';
+                else if (healthState === 'degraded') healthColor = '#f59e0b';
                 else if (healthState === 'critical') healthColor = '#ef4444';
                 else if (healthState === 'down') healthColor = '#6b7280';
 
@@ -699,7 +704,7 @@
                         polylines[streamer.id].setLatLngs(trail);
                     } else {
                         polylines[streamer.id] = L.polyline(trail, {
-                            color: streamer.color,
+                            color: safeColor,
                             weight: 4,
                             opacity: 0.8,
                             lineJoin: 'round'
@@ -713,12 +718,12 @@
                     const customIcon = L.divIcon({
                         className: '',
                         html: `
-                            <div class="streamer-marker" style="--marker-color: ${streamer.color}">
+                            <div class="streamer-marker" style="--marker-color: ${safeColor}">
                                 <div class="streamer-avatar-wrapper">
-                                    <img src="${streamer.avatar_url}" onerror="this.onerror=null;this.src='${defaultAvatar + streamer.name}'" class="streamer-avatar" alt="${streamer.name}">
+                                    <img src="${safeAvatar}" onerror="this.onerror=null;this.src='/static/pwa/icon-192.svg'" class="streamer-avatar" alt="${safeName}">
                                     <div class="streamer-status-dot" style="background-color: ${streamer.is_live ? '#ef4444' : '#6b7280'}"></div>
                                 </div>
-                                <div class="streamer-name-tag">${streamer.name.split(' ')[0]}</div>
+                                <div class="streamer-name-tag">${RatoNetUI.escapeHTML(streamer.name.split(' ')[0])}</div>
                             </div>
                         `,
                         iconSize: [60, 60],
@@ -739,13 +744,13 @@
                 const listItemHtml = `
                     <div class="flex p-2.5 rounded-xl hover:bg-white/5 cursor-pointer transition-colors group" onclick="map.setView([${latLng[0]}, ${latLng[1]}], 14)">
                         <div class="relative flex-shrink-0 mr-3">
-                            <div class="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden" style="background-color: ${streamer.color}">
-                                <img src="${streamer.avatar_url}" onerror="this.onerror=null;this.src='${defaultAvatar + streamer.name}'" class="w-[36px] h-[36px] rounded-full object-cover border-2 border-black" alt="${streamer.name}">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden" style="background-color: ${safeColor}">
+                                <img src="${safeAvatar}" onerror="this.onerror=null;this.src='/static/pwa/icon-192.svg'" class="w-[36px] h-[36px] rounded-full object-cover border-2 border-black" alt="${safeName}">
                             </div>
                         </div>
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-1.5 mb-1">
-                                <h3 class="text-sm font-semibold text-white/90 truncate group-hover:text-white transition-colors">${streamer.name}</h3>
+                                <h3 class="text-sm font-semibold text-white/90 truncate group-hover:text-white transition-colors">${safeName}</h3>
                                 ${streamer.is_crown ? '<i class="fa-solid fa-crown text-yellow-500 text-[10px]" title="Host"></i>' : ''}
                             </div>
                             <div class="flex items-center flex-wrap gap-2">

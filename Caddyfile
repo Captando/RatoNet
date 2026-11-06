@@ -1,0 +1,3 @@
+{$RATONET_DOMAIN} {
+    reverse_proxy ratonet:8000
+}

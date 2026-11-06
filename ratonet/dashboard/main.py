@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 import os
+from anyio import CancelScope
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,7 +46,11 @@ async def lifespan(app: FastAPI):
         len(registered), len(approved),
     )
 
-    yield
+    await manager.start()
+    try:
+        yield
+    finally:
+        await manager.stop()
 
 
 app = FastAPI(
@@ -55,7 +61,7 @@ app = FastAPI(
 )
 
 # CORS — restrito em produção se CORS_ORIGINS definido, senão permite tudo
-_cors_env = os.environ.get("CORS_ORIGINS", "")
+_cors_env = os.environ.get("CORS_ORIGINS", settings.dashboard.cors_origins)
 _cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else ["*"]
 
 app.add_middleware(
@@ -80,11 +86,15 @@ async def ws_dashboard(ws: WebSocket):
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:
+        pass
+    finally:
         manager.disconnect_dashboard(ws)
 
 
 @app.websocket("/ws/field/{streamer_id}")
-async def ws_field(ws: WebSocket, streamer_id: str, key: str = Query(default="")):
+async def ws_field(ws: WebSocket, streamer_id: str, key: str = Query(default=""),
+                   source: Literal["field", "gps"] = "field", video: bool = False,
+                   transport: Literal["srt", "srtla"] = "srt"):
     """WebSocket para field agents (autenticado por API key)."""
     # Valida API key (precisa aceitar antes de fechar)
     if not key:
@@ -109,13 +119,16 @@ async def ws_field(ws: WebSocket, streamer_id: str, key: str = Query(default="")
         return
 
     # Conecta
-    await manager.connect_field(ws, streamer_id, streamer_data)
     try:
+        await manager.connect_field(ws, streamer_id, streamer_data, source, video, transport)
         while True:
             data = await ws.receive_text()
-            await manager.handle_field_message(streamer_id, data)
+            await manager.handle_field_message(streamer_id, data, ws, source)
     except WebSocketDisconnect:
-        manager.disconnect_field(streamer_id)
+        pass
+    finally:
+        with CancelScope(shield=True):
+            await manager.disconnect_field(streamer_id, ws, source)
 
 
 # --- Serve frontend estático ---
@@ -157,17 +170,8 @@ async def serve_pwa_index():
     return {"error": "PWA not found"}
 
 
-@app.get("/pwa/{path:path}")
-async def serve_pwa_file(path: str):
-    """Serve arquivos da PWA."""
-    file_path = STATIC_DIR / "static" / "pwa" / path
-    if file_path.exists() and file_path.is_file():
-        return FileResponse(file_path)
-    # SPA fallback — retorna index.html para rotas do frontend
-    pwa_index = STATIC_DIR / "static" / "pwa" / "index.html"
-    if pwa_index.exists():
-        return FileResponse(pwa_index)
-    return {"error": "Not found"}
+if (STATIC_DIR / "static" / "pwa").exists():
+    app.mount("/pwa", StaticFiles(directory=STATIC_DIR / "static" / "pwa", html=True), name="pwa")
 
 
 if (STATIC_DIR / "static").exists():
@@ -183,6 +187,7 @@ def main():
         "ratonet.dashboard.main:app",
         host=settings.dashboard.host,
         port=settings.dashboard.port,
+        access_log=False,  # Query strings include legacy API/pull keys.
     )
 
 

@@ -175,7 +175,9 @@ tailwind.config = {
   </div>
 </div>
 
+<script src="/static/js/dom.js"></script>
 <script>
+const { escapeHTML: esc, safeURL, color: safeColor } = RatoNetUI;
 let API_KEY = '';
 let STREAMER = null;
 let destinations = [];
@@ -255,8 +257,8 @@ function loadDashboard() {
   const s = STREAMER;
   document.getElementById('dash-name').textContent = s.name;
   const av = document.getElementById('dash-avatar');
-  av.src = s.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=ff6600&color=fff&size=56`;
-  av.style.borderColor = s.color || '#ff6600';
+  av.src = safeURL(s.avatar_url) || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=ff6600&color=fff&size=56`;
+  av.style.borderColor = safeColor(s.color);
   if (s.health) document.getElementById('dash-health').textContent = s.health.score;
   if (s.gps) {
     document.getElementById('dash-gps').textContent = `${s.gps.lat.toFixed(4)}, ${s.gps.lng.toFixed(4)}`;
@@ -268,10 +270,10 @@ function loadProfile() {
   const s = STREAMER;
   document.getElementById('pf-name').value = s.name || '';
   document.getElementById('pf-avatar').value = s.avatar_url || '';
-  document.getElementById('pf-avatar-preview').src = s.avatar_url || '';
+  document.getElementById('pf-avatar-preview').src = safeURL(s.avatar_url);
   document.getElementById('pf-color').value = s.color || '#ff6600';
   document.getElementById('pf-avatar').addEventListener('input', e => {
-    document.getElementById('pf-avatar-preview').src = e.target.value;
+    document.getElementById('pf-avatar-preview').src = safeURL(e.target.value);
   });
   const container = document.getElementById('pf-socials');
   container.innerHTML = '';
@@ -282,7 +284,8 @@ function addSocialInput(value = '') {
   const container = document.getElementById('pf-socials');
   const div = document.createElement('div');
   div.className = 'flex gap-2';
-  div.innerHTML = `<input class="flex-1 bg-dark border border-border rounded-lg px-3 py-2 text-white text-sm focus:border-rato focus:outline-none" value="${value}" placeholder="@usuario ou URL"><button onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-300 px-2"><i class="fas fa-times"></i></button>`;
+  div.innerHTML = `<input class="flex-1 bg-dark border border-border rounded-lg px-3 py-2 text-white text-sm focus:border-rato focus:outline-none" placeholder="@usuario ou URL"><button onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-300 px-2"><i class="fas fa-times"></i></button>`;
+  div.querySelector('input').value = value;
   container.appendChild(div);
 }
 function addSocial() { addSocialInput(); }
@@ -331,8 +334,8 @@ function renderDestinations() {
       <div class="flex items-center gap-3 flex-1 min-w-0">
         <i class="${p.icon} text-xl ${p.color}"></i>
         <div class="flex-1 min-w-0">
-          <p class="font-semibold text-sm capitalize">${d.platform}</p>
-          <input class="dest-url w-full bg-dark border border-border rounded px-2 py-1 text-xs font-mono text-gray-300 mt-1 focus:border-rato focus:outline-none" value="${d.rtmp_url}" data-idx="${i}">
+          <p class="font-semibold text-sm capitalize">${esc(d.platform)}</p>
+          <input class="dest-url w-full bg-dark border border-border rounded px-2 py-1 text-xs font-mono text-gray-300 mt-1 focus:border-rato focus:outline-none" data-idx="${i}">
         </div>
       </div>
       <div class="flex items-center gap-3">
@@ -342,6 +345,7 @@ function renderDestinations() {
         </label>
         <button onclick="removeDest(${i})" class="text-red-400 hover:text-red-300 px-2"><i class="fas fa-trash text-sm"></i></button>
       </div>`;
+    div.querySelector('.dest-url').value = d.rtmp_url;
     list.appendChild(div);
   });
   // Bind URL changes

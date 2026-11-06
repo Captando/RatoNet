@@ -194,6 +194,7 @@
   <span id="pointCount">0 pontos enviados</span>
 </div>
 
+<script src="/pwa/queue.js"></script>
 <script>
 const creds = JSON.parse(localStorage.getItem('ratonet_creds') || 'null');
 if (!creds) {
@@ -220,67 +221,52 @@ let ws = null;
 let pointsSent = 0;
 let tracking = false;
 let wakeLock = null;
-let gpsQueue = [];
+const gpsQueue = creds ? new GPSQueue(`${creds.serverUrl}/${creds.streamerId}`) : null;
+let flushing = false;
+let reconnectTimer = null;
 
 // --- GPS Queue (offline support) ---
-function queueGPS(data) {
-  gpsQueue.push(data);
-  if (gpsQueue.length > 1000) gpsQueue.shift(); // limite
-}
-
 async function sendGPS(data) {
-  // Tenta WebSocket primeiro
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      type: 'gps',
-      streamer_id: creds.streamerId,
-      data: data,
-    }));
-    pointsSent++;
-    $pointCount.textContent = `${pointsSent} pontos enviados`;
-    return true;
-  }
-
-  // Fallback REST
   try {
-    const res = await fetch(
-      `${creds.serverUrl}/api/location?streamer_id=${creds.streamerId}&api_key=${encodeURIComponent(creds.apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }
-    );
-    if (res.ok) {
-      pointsSent++;
-      $pointCount.textContent = `${pointsSent} pontos enviados`;
-      return true;
-    }
-  } catch (e) { /* offline */ }
-
-  // Enfileira para envio posterior
-  queueGPS(data);
-  return false;
+    await gpsQueue.add(data);
+    await flushQueue();
+  } catch {
+    $statusText.textContent = 'Erro ao salvar GPS no dispositivo';
+  }
 }
 
 async function flushQueue() {
-  while (gpsQueue.length > 0) {
-    const data = gpsQueue[0];
-    const sent = await sendGPS(data);
-    if (sent) {
-      gpsQueue.shift();
-    } else {
-      break; // ainda offline
+  if (flushing || !gpsQueue || !tracking) return;
+  flushing = true;
+  try {
+    // REST acknowledges receipt; a successful WebSocket send alone does not.
+    for (const point of await gpsQueue.list()) {
+      if (!tracking) break;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(
+          `${creds.serverUrl}/api/location?streamer_id=${creds.streamerId}&api_key=${encodeURIComponent(creds.apiKey)}`,
+          { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(point.data), signal: controller.signal }
+        );
+        if (!res.ok) break;
+        const result = await res.json();
+        await gpsQueue.remove(point.id);
+        if (result.accepted) pointsSent++;
+        $pointCount.textContent = `${pointsSent} pontos ao vivo enviados`;
+      } finally { clearTimeout(timer); }
     }
-  }
+  } catch { /* Pending records remain in IndexedDB until acknowledged. */ }
+  finally { flushing = false; }
 }
 
 // --- WebSocket ---
 function connectWS() {
-  if (!creds) return;
+  if (!creds || !tracking || (ws && ws.readyState < WebSocket.CLOSING)) return;
   const wsProto = creds.serverUrl.startsWith('https') ? 'wss' : 'ws';
   const host = creds.serverUrl.replace(/^https?:\/\//, '');
-  const url = `${wsProto}://${host}/ws/field/${creds.streamerId}?key=${creds.apiKey}`;
+  const url = `${wsProto}://${host}/ws/field/${creds.streamerId}?key=${encodeURIComponent(creds.apiKey)}&source=gps`;
 
   try {
     ws = new WebSocket(url);
@@ -289,14 +275,21 @@ function connectWS() {
       $statusText.textContent = 'Conectado + Rastreando';
       flushQueue();
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      ws = null;
+      if (!tracking) return;
+      if ([4000, 4001, 4003, 1008].includes(event.code)) {
+        stopTracking();
+        $statusText.textContent = event.reason || 'Sessão encerrada';
+        return;
+      }
       $statusDot.className = 'status-dot connecting';
       $statusText.textContent = 'Reconectando...';
-      if (tracking) setTimeout(connectWS, 3000);
+      if (tracking) reconnectTimer = setTimeout(connectWS, 3000);
     };
     ws.onerror = () => ws.close();
   } catch (e) {
-    if (tracking) setTimeout(connectWS, 3000);
+    if (tracking) reconnectTimer = setTimeout(connectWS, 3000);
   }
 }
 
@@ -315,6 +308,7 @@ function onPosition(pos) {
   $lng.textContent = longitude.toFixed(6);
 
   sendGPS({
+    recorded_at: new Date(pos.timestamp).toISOString(),
     lat: latitude,
     lng: longitude,
     speed_kmh: Math.round(speedKmh * 10) / 10,
@@ -343,6 +337,11 @@ async function requestWakeLock() {
 
 // --- Toggle tracking ---
 function startTracking() {
+  if (!window.isSecureContext || !navigator.geolocation) {
+    $statusText.textContent = 'GPS exige HTTPS. Abra o endereço seguro do servidor.';
+    $statusDot.className = 'status-dot error';
+    return;
+  }
   tracking = true;
   $toggleBtn.textContent = 'Parar Tracking';
   $toggleBtn.className = 'toggle-btn stop';
@@ -356,11 +355,13 @@ function startTracking() {
   });
 
   connectWS();
+  flushQueue();
   requestWakeLock();
 }
 
 function stopTracking() {
   tracking = false;
+  clearTimeout(reconnectTimer);
   $toggleBtn.textContent = 'Iniciar Tracking';
   $toggleBtn.className = 'toggle-btn start';
   $statusDot.className = 'status-dot';
@@ -385,20 +386,15 @@ $toggleBtn.addEventListener('click', () => {
   else startTracking();
 });
 
-document.getElementById('btnLogout').addEventListener('click', () => {
+document.getElementById('btnLogout').addEventListener('click', async () => {
   stopTracking();
+  if (gpsQueue) await gpsQueue.clear();
   localStorage.removeItem('ratonet_creds');
   window.location.href = '/pwa/';
 });
 
-// Flush queue quando SW pede
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.addEventListener('message', (e) => {
-    if (e.data && e.data.type === 'flush-gps-queue') {
-      flushQueue();
-    }
-  });
-}
+window.addEventListener('online', flushQueue);
+setInterval(flushQueue, 5000);
 
 // Re-acquire wake lock quando volta ao foco
 document.addEventListener('visibilitychange', () => {

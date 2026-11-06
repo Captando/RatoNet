@@ -49,7 +49,7 @@ class OBSController:
         try:
             import obsws_python as obs
 
-            self._client = obs.ReqClient(
+            self._client = await asyncio.to_thread(obs.ReqClient,
                 host=self.host,
                 port=self.port,
                 password=self.password,
@@ -58,7 +58,7 @@ class OBSController:
             self._connected = True
 
             # Verifica cena atual
-            resp = self._client.get_current_program_scene()
+            resp = await asyncio.to_thread(self._client.get_current_program_scene)
             self._current_scene = resp.scene_name
             log.info(
                 "OBS conectado (%s:%d) — cena atual: %s",
@@ -76,6 +76,9 @@ class OBSController:
 
     def disconnect(self) -> None:
         """Desconecta do OBS."""
+        for timer in (self._fallback_timer, self._recovery_timer):
+            if timer:
+                timer.cancel()
         if self._client:
             try:
                 self._client.base_client.ws.close()
@@ -134,7 +137,8 @@ class OBSController:
             await asyncio.sleep(self.fallback_delay)
 
             if self._connected and self._client:
-                self._switch_scene(self.scene_brb)
+                if not await asyncio.to_thread(self._switch_scene, self.scene_brb):
+                    return
                 self._in_fallback = True
                 log.warning("[%s] FALLBACK ATIVADO → cena '%s'", streamer_id, self.scene_brb)
 
@@ -152,7 +156,8 @@ class OBSController:
             await asyncio.sleep(self.recovery_delay)
 
             if self._connected and self._client:
-                self._switch_scene(self.scene_live)
+                if not await asyncio.to_thread(self._switch_scene, self.scene_live):
+                    return
                 self._in_fallback = False
                 log.info("[%s] RECOVERY → cena '%s'", streamer_id, self.scene_live)
 
@@ -161,15 +166,17 @@ class OBSController:
         finally:
             self._recovery_timer = None
 
-    def _switch_scene(self, scene_name: str) -> None:
+    def _switch_scene(self, scene_name: str) -> bool:
         """Troca cena no OBS."""
         if not self._client:
-            return
+            return False
         try:
             self._client.set_current_program_scene(scene_name)
             self._current_scene = scene_name
+            return True
         except Exception as e:
             log.error("Erro ao trocar cena para '%s': %s", scene_name, e)
+            return False
 
     def set_source_visible(self, scene: str, source: str, visible: bool) -> None:
         """Mostra/esconde uma source em uma cena (útil para overlays)."""

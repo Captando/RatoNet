@@ -26,12 +26,12 @@ Projetada para streamers que transmitem de ambientes externos — estradas, expe
                                                    └───────────────────┘
 ```
 
-O sistema é dividido em três componentes independentes:
+O sistema tem três responsabilidades. Na VPS, um único processo FastAPI gerencia o ciclo de vida do dashboard, das entradas de vídeo, dos relays e do OBS:
 
 | Componente | Função | Onde roda |
 |---|---|---|
 | **Field Agent** | Coleta GPS, hardware, rede; faz bonding SRT | No hardware de campo (Raspberry Pi, laptop, etc.) |
-| **VPS Server** | Recebe streams, relay RTMP, health monitor, OBS control | Servidor VPS na nuvem |
+| **VPS Server** | Uma entrada SRT por streamer, relay RTMP, health monitor, OBS control | Servidor VPS na nuvem |
 | **Dashboard** | API REST, WebSocket em tempo real, mapa ao vivo, overlays | Mesmo servidor (FastAPI) |
 
 ---
@@ -47,21 +47,25 @@ O sistema é dividido em três componentes independentes:
 
 ### Bonding de Rede
 - **SRTLA** — Protocolo real de bonding do BELABOX (srtla_send + srtla_rec)
-- **Bonding nativo** — Fallback multi-link SRT (1 stream por interface)
-- **Auto-fallback** — Se binário SRTLA não encontrado, usa bonding nativo automaticamente
+- **SRT direto** — Fallback de um link, pela rota de rede do sistema operacional
+- **Negociação de sessão** — O servidor informa porta, transporte e senha SRT antes de iniciar o encoder
+- **SRTLA opcional** — Exige `srtla_send` no campo e `srtla_rec` na VPS; sem os binários, a sessão usa SRT direto
 
 ### Health Monitor + OBS
-- Score de saúde 0-100 calculado em tempo real
-- Estados: HEALTHY → DEGRADED → CRITICAL → DOWN
+- Saúde baseada em frames realmente recebidos pelo FFmpeg, por streamer
+- Estados: UNKNOWN (aguardando vídeo), HEALTHY, DEGRADED e DOWN
+- Telemetria conectada não significa vídeo recebido. O indicador mede a entrada de vídeo, não confirma publicação na plataforma de destino
 - Troca automática de cena OBS (LIVE ↔ BRB) via OBS WebSocket
 - Delay configurável para evitar flapping
+- Configure `OBS_STREAMER_ID` para selecionar o streamer que controla a instância OBS
 
 ### RTMP Relay (Multi-Streamer)
 - **Cada streamer configura suas próprias stream keys** (Twitch, YouTube, Kick, custom)
-- Relay individual por streamer — quando conecta, sobe FFmpeg; quando desconecta, mata
+- Relay individual por streamer — quando o agente conecta com `--video`, inicia um FFmpeg; quando desconecta, encerra
 - Suporte a múltiplos destinos simultâneos por streamer (multistream)
 - URLs RTMP mascaradas na API (segurança das stream keys)
-- Alocação dinâmica de portas SRT por streamer
+- Portas SRT limitadas e reutilizáveis; cada sessão recebe sua própria senha de criptografia
+- Uma entrada H.264/AAC alimenta múltiplos destinos RTMP via tee/fifo, com recuperação independente dos destinos
 
 ### Dashboard Web
 - Mapa full-screen com Leaflet (camada dark CartoDB)
@@ -95,9 +99,9 @@ Cada overlay é um HTML autocontido, adicionado no OBS como Browser Source.
 
 ### PWA GPS Tracker
 - App web instalável para celular do streamer
-- Rastreamento GPS em background (`watchPosition` + Wake Lock API)
-- Envio via WebSocket com fallback REST
-- Fila offline com sync automático ao reconectar
+- Rastreamento GPS em primeiro plano (`watchPosition` + Wake Lock API)
+- Sessão GPS separada da sessão de hardware; envio REST com confirmação de recebimento
+- Fila offline persistente em IndexedDB, com reenvio ao reconectar ou reabrir e iniciar o tracker
 - Service Worker para cache e operação sem rede
 
 ### Plataforma Multi-Streamer
@@ -209,18 +213,30 @@ cd RatoNet
 
 # 3. Configure
 cp .env.example .env
-nano .env  # ajuste ADMIN_TOKEN, RTMP_PRIMARY_URL, etc.
+nano .env  # ajuste ADMIN_TOKEN, RATONET_DOMAIN e FIELD_SERVER_WS_URL
 
 # 4. Suba
-docker compose up -d
+docker compose --profile https up -d --build
 
 # 5. Abra as portas no firewall
-sudo ufw allow 8000/tcp   # Dashboard
-sudo ufw allow 9000:9003/udp  # SRT
-sudo ufw allow 5001/udp   # SRTLA
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 9000:9099/udp  # entradas SRT e SRTLA por sessão
 ```
 
-Acesse `http://SEU-IP:8000` para ver o dashboard.
+Antes de iniciar, aponte o DNS de um domínio para a VPS e configure `RATONET_DOMAIN=live.seu-dominio.com` e `FIELD_SERVER_WS_URL=wss://live.seu-dominio.com/ws/field`. Acesse `https://live.seu-dominio.com`. O Caddy obtém e renova o certificado; as portas 80 e 443 precisam estar acessíveis.
+
+Para desenvolvimento local, use `docker compose up -d --build` e `http://localhost:8000`. A porta 8000 fica vinculada ao loopback; em produção, o acesso público é pelo proxy HTTPS. GPS e Service Worker no celular exigem HTTPS.
+
+### Atualização de instalações existentes
+
+- Atualize **servidor e agente de campo juntos**: o agente agora espera `session_ready` antes de iniciar vídeo. A PWA usa `source=gps` para coexistir com o hardware.
+- Configure destinos no painel de cada streamer. O relay global legado (`RTMP_PRIMARY_URL`/`RTMP_SECONDARY_URL`) foi substituído por entradas isoladas por streamer.
+- O intervalo padrão é `9000–9099/udp`: 25 blocos de quatro portas. `SRT_MAX_STREAMERS`, `SRT_MAX_LINKS`, Compose e firewall devem representar o mesmo intervalo. Cada bloco usa sua primeira porta para SRT e a segunda para SRTLA, quando habilitado.
+- SRT usa senha aleatória por sessão, enviada pelo WebSocket autenticado; `SRT_PASSPHRASE` não define mais uma senha compartilhada.
+- Para SRTLA, instale os binários do [BELABOX](https://github.com/BELABOX/srtla) nas respectivas máquinas (ou na imagem Docker) e habilite `SRTLA_ENABLED=true` em ambas. Configure roteamento por IP de origem no Linux de campo. O sender gera o arquivo de IPs exigido pelo binário. A porta SRTLA remota agora é negociada por sessão; não é uma porta global fixa.
+- Mantenha **um worker Uvicorn**: conexões, processos de vídeo e portas pertencem ao mesmo processo. Escala horizontal exige coordenação externa e não está implementada.
+- Se uma versão anterior esteve exposta, substitua stream keys, tokens LivePix e credenciais que possam ter sido lidos pelas rotas corrigidas. Faça backup do SQLite antes da atualização.
 
 ---
 
@@ -273,17 +289,15 @@ SRT_MAX_LINKS=4
 # SRTLA (opcional — desabilitado por padrão)
 SRTLA_ENABLED=false
 SRTLA_SEND_PORT=5000
-SRTLA_REC_PORT=5001
+# A porta remota é negociada pelo servidor por sessão.
 
-# RTMP Relay (legado — agora cada streamer configura via API)
-# RTMP_PRIMARY_URL e RTMP_SECONDARY_URL são usados apenas como fallback global
-RTMP_PRIMARY_URL=
-RTMP_SECONDARY_URL=
+# RTMP Relay — destinos configurados por streamer no painel /panel/
 
 # OBS WebSocket
 OBS_HOST=localhost
 OBS_PORT=4455
 OBS_PASSWORD=
+OBS_STREAMER_ID=UUID_DO_STREAMER
 OBS_SCENE_LIVE=LIVE
 OBS_SCENE_BRB=BRB
 
@@ -334,6 +348,17 @@ python -m ratonet.field.main --id SEU_UUID --key SUA_API_KEY
 pytest
 ```
 
+Regressões no navegador e transmissão real (FFmpeg com suporte SRT):
+
+```bash
+pip install -e '.[dev,browser]'
+python -m playwright install chromium
+RATONET_BROWSER_TEST=1 pytest -q tests/test_browser.py
+RATONET_MEDIA_TEST=1 pytest -q tests/test_media_integration.py
+```
+
+O teste de mídia usa vídeo sintético, SRT criptografado e dois receptores RTMP locais, e verifica os arquivos recebidos com `ffprobe`. Não usa contas de Twitch/YouTube. O GitHub Actions executa essas verificações em Linux.
+
 ---
 
 ## Setup do Raspberry Pi (Field Agent)
@@ -380,7 +405,7 @@ O wizard vai:
 **Opção B — Cadastro manual via API:**
 ```bash
 # Cadastra no servidor
-curl -X POST http://SEU-SERVIDOR:8000/api/register \
+curl -X POST https://SEU-DOMINIO/api/register \
   -H "Content-Type: application/json" \
   -d '{"name": "Meu Nome", "email": "email@exemplo.com"}'
 
@@ -391,7 +416,7 @@ curl -X POST http://SEU-SERVIDOR:8000/api/register \
 
 ### 4. Configurar stream keys (no painel web)
 
-Acesse `http://SEU-SERVIDOR:8000/panel/`, faça login com sua API key e configure:
+Acesse `https://SEU-DOMINIO/panel/`, faça login com sua API key e configure:
 - **Stream Keys** — Adicione seus destinos RTMP (Twitch, YouTube, Kick)
 - **LivePix** — Configure o token para alertas de doação (opcional)
 - **Overlays** — Copie as URLs dos overlays para o OBS
@@ -457,7 +482,7 @@ sudo dpkg-reconfigure gpsd
 cgps -s  # deve mostrar coordenadas após fix
 ```
 
-Se não tiver GPS USB, use a **PWA GPS Tracker** no celular: acesse `http://SEU-SERVIDOR:8000/pwa/` e inicie o tracking.
+Se não tiver GPS USB, use a **PWA GPS Tracker** no celular: acesse `https://SEU-DOMINIO/pwa/` e inicie o tracking. Ela pode funcionar ao mesmo tempo que o hardware; GPS recente do celular tem prioridade sobre o GPS do equipamento.
 
 ---
 
@@ -491,7 +516,7 @@ curl -X PUT "http://localhost:8000/api/me/destinations?api_key=SUA_API_KEY" \
 curl "http://localhost:8000/api/me/destinations?api_key=SUA_API_KEY"
 ```
 
-Quando o field agent conectar, o servidor sobe automaticamente os relays FFmpeg para cada destino habilitado. Ao desconectar, os relays são encerrados.
+Quando o field agent conectar com `--video`, o servidor negocia a entrada SRT e inicia um FFmpeg para todos os destinos habilitados. Ao desconectar, o relay é encerrado. Alterações de destinos entram em vigor na próxima conexão do agente.
 
 ### Endpoints Principais
 
@@ -528,7 +553,8 @@ Quando o field agent conectar, o servidor sobe automaticamente os relays FFmpeg 
 | Endpoint | Direção | Descrição |
 |---|---|---|
 | `/ws/dashboard` | Server → Client | Atualizações de telemetria para browsers |
-| `/ws/field/{id}?key=API_KEY` | Client → Server | Telemetria do field agent |
+| `/ws/field/{id}?key=API_KEY&source=field&video=true` | Bidirecional | Negocia `session_ready` e recebe telemetria do field agent |
+| `/ws/field/{id}?key=API_KEY&source=gps` | Bidirecional | Presença da PWA; coordenadas são confirmadas via REST |
 
 ---
 
@@ -537,11 +563,11 @@ Quando o field agent conectar, o servidor sobe automaticamente os relays FFmpeg 
 Adicione como **Browser Source** no OBS:
 
 ```
-http://seu-servidor:8000/static/overlays/speed.html?streamer_id=UUID&pull_key=pk_XXX
-http://seu-servidor:8000/static/overlays/map.html?streamer_id=UUID&pull_key=pk_XXX
-http://seu-servidor:8000/static/overlays/location.html?streamer_id=UUID&pull_key=pk_XXX
-http://seu-servidor:8000/static/overlays/health.html?streamer_id=UUID&pull_key=pk_XXX
-http://seu-servidor:8000/static/overlays/livepix.html?streamer_id=UUID&pull_key=pk_XXX
+https://SEU-DOMINIO/static/overlays/speed.html?streamer_id=UUID&pull_key=pk_XXX
+https://SEU-DOMINIO/static/overlays/map.html?streamer_id=UUID&pull_key=pk_XXX
+https://SEU-DOMINIO/static/overlays/location.html?streamer_id=UUID&pull_key=pk_XXX
+https://SEU-DOMINIO/static/overlays/health.html?streamer_id=UUID&pull_key=pk_XXX
+https://SEU-DOMINIO/static/overlays/livepix.html?streamer_id=UUID&pull_key=pk_XXX
 ```
 
 > **LivePix:** Configure o token no painel do streamer (`/panel/` → aba LivePix). O overlay conecta direto ao WebSocket da LivePix e exibe alertas de doação animados. Para testar, adicione `&test=1` na URL.
@@ -563,9 +589,11 @@ Acesse `/pwa/` no celular do streamer:
 2. Toque "Iniciar Tracking"
 3. Para melhor experiência, use "Adicionar na tela inicial"
 
-O tracker usa `watchPosition` com alta precisão e mantém a tela ligada via Wake Lock API. Se a conexão cair, os pontos GPS são enfileirados e enviados automaticamente ao reconectar.
+O tracker usa `watchPosition` com alta precisão e solicita Wake Lock para manter a tela ligada. A fila de até 1.000 pontos por streamer fica em IndexedDB e sobrevive a recargas. O reenvio acontece com o tracker ativo e remove cada ponto apenas após resposta do servidor.
 
-> **Nota:** No iOS, o tracking em background é limitado pelo sistema. Para uso contínuo, mantenha o app em primeiro plano. No Android, funciona em background normalmente.
+Cada ponto carrega o horário da coleta. Pontos mais antigos que 60 segundos ou anteriores à última posição aceita não atualizam o mapa ao vivo; este projeto não mantém histórico de viagens no servidor. Ao sair da conta, a fila local desse streamer é apagada.
+
+> **Nota:** Mantenha a PWA em primeiro plano tanto no iOS quanto no Android. Wake Lock não garante execução com a tela bloqueada ou com o app suspenso. Use o agente de hardware para coleta contínua independente do navegador.
 
 ---
 
@@ -573,7 +601,7 @@ O tracker usa `watchPosition` com alta precisão e mantém a tela ligada via Wak
 
 ### Painel do Streamer (`/panel/`)
 
-Acesse `http://seu-servidor:8000/panel/` e faça login com sua **API key**.
+Acesse `https://SEU-DOMINIO/panel/` e faça login com sua **API key**.
 
 **Tabs disponíveis:**
 - **Dashboard** — Status ao vivo, GPS, health score, uptime
@@ -584,7 +612,7 @@ Acesse `http://seu-servidor:8000/panel/` e faça login com sua **API key**.
 
 ### Painel Admin (`/admin/`)
 
-Acesse `http://seu-servidor:8000/admin/` e faça login com o **ADMIN_TOKEN**.
+Acesse `https://SEU-DOMINIO/admin/` e faça login com o **ADMIN_TOKEN**.
 
 **Tabs disponíveis:**
 - **Dashboard** — Contadores: registrados, aprovados, online, field agents, dashboards
@@ -627,12 +655,12 @@ RatoNet/
 │   │   ├── setup.py              # Wizard interativo de configuração
 │   │   ├── telemetry.py          # Coleta GPS + hardware + Starlink
 │   │   ├── network_monitor.py    # Monitor de interfaces de rede
-│   │   ├── bonding.py            # Bonding SRT (nativo + SRTLA)
+│   │   ├── bonding.py            # Transporte SRTLA opcional (fallback SRT direto)
 │   │   └── encoder.py            # FFmpeg SRT encoder
 │   │
 │   └── server/                   # VPS Server — recebe streams
-│       ├── main.py               # Orquestrador (SRT + relay + OBS + dashboard)
-│       ├── srt_receiver.py       # SRT receiver (nativo + SRTLA)
+│       ├── main.py               # Entry point do ciclo de vida unificado FastAPI
+│       ├── srt_receiver.py       # Portas limitadas/reutilizáveis + proxy SRTLA
 │       ├── relay.py              # RTMP relay (FFmpeg)
 │       ├── health.py             # Health monitor (score 0-100)
 │       └── obs_controller.py     # OBS WebSocket (troca de cena)
@@ -693,7 +721,7 @@ O sistema pode ser estendido para consumir qualquer API REST/WebSocket. A arquit
 | Banco | SQLite (async via aiosqlite) |
 | GPS | gpsd, Geolocation Web API (PWA) |
 | Overlays | HTML autocontido (OBS Browser Source) |
-| PWA | Service Worker, Wake Lock API, Background Sync |
+| PWA | Service Worker, Wake Lock API, IndexedDB |
 
 ---
 

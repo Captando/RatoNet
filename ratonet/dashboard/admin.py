@@ -84,16 +84,8 @@ async def remove_streamer(
     if not streamer:
         raise HTTPException(status_code=404, detail="Streamer não encontrado")
 
-    # Desconecta field agent se estiver online
-    if streamer_id in manager.field_agents:
-        ws = manager.field_agents[streamer_id]
-        await ws.close(code=1008, reason="Removido pelo admin")
-        manager.disconnect_field(streamer_id)
-
-    # Remove do mapa ao vivo
-    manager.streamers.pop(streamer_id, None)
-
     await db.delete_streamer(streamer_id, db_path=settings.database.path)
+    await manager.remove_streamer(streamer_id)
     log.info("Streamer removido: %s (%s)", streamer["name"], streamer_id)
     return {"message": "Streamer removido", "name": streamer["name"]}
 

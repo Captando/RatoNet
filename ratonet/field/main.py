@@ -15,6 +15,7 @@ import json
 import signal
 import sys
 from typing import Optional
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import websockets
 
@@ -79,14 +80,17 @@ class FieldAgent:
         # Inicializa coletores
         await self.telemetry.start()
 
-        # Inicializa vídeo se habilitado
-        if self.enable_video:
-            await self._start_video()
-
         # Loop principal com reconexão
         while self._running:
             try:
                 await self._connect_and_run()
+            except websockets.ConnectionClosed as e:
+                code = e.rcvd.code if e.rcvd else None
+                if code in (4000, 4001, 4003, 1008):
+                    log.error("Sessão encerrada pelo servidor (%s)", code)
+                    self._running = False
+                    break
+                await asyncio.sleep(3)
             except Exception as e:
                 log.error("Conexão perdida: %s — reconectando em 3s", e)
                 await asyncio.sleep(3)
@@ -96,34 +100,44 @@ class FieldAgent:
         self._running = False
         if self._ws:
             await self._ws.close()
-        if self._encoder:
-            await self._encoder.stop()
+        await self._stop_video()
         log.info("Field agent parado")
 
     async def _connect_and_run(self) -> None:
         """Conecta ao servidor e inicia loops de envio."""
-        url = f"{self.server_url}/{self.streamer_id}"
-        if self.api_key:
-            url += f"?key={self.api_key}"
+        from ratonet.field.bonding import SRTLASender
+        parts = urlsplit(self.server_url)
+        use_srtla = settings.srtla.enabled and SRTLASender(
+            settings.srtla.send_port, parts.hostname, 0,
+            binary_path=settings.srtla.binary_path)._resolve_binary()
+        query = urlencode({"key": self.api_key, "source": "field",
+                           "video": str(self.enable_video).lower(),
+                           "transport": "srtla" if use_srtla else "srt"})
+        url = urlunsplit((parts.scheme, parts.netloc,
+                         parts.path.rstrip("/") + "/" + self.streamer_id, query, ""))
         log.info("Conectando a %s ...", url.split("?")[0])
 
         async with websockets.connect(url) as ws:
             self._ws = ws
             log.info("Conectado ao servidor!")
 
-            # Roda telemetria e network em paralelo
-            tasks = [
-                asyncio.create_task(self._telemetry_loop()),
-                asyncio.create_task(self._network_loop()),
-                asyncio.create_task(self._receive_loop()),
-            ]
-
+            tasks = []
             try:
+                ready = json.loads(await asyncio.wait_for(ws.recv(), 20))
+                if ready.get("type") != "session_ready":
+                    raise RuntimeError("Servidor não negociou a sessão")
+                if self.enable_video:
+                    await self._start_video(ready["data"]["video"])
+                tasks = [asyncio.create_task(self._telemetry_loop()),
+                         asyncio.create_task(self._network_loop()),
+                         asyncio.create_task(self._receive_loop())]
                 await asyncio.gather(*tasks)
-            except websockets.ConnectionClosed:
-                log.warning("Conexão WebSocket fechada")
+            finally:
                 for task in tasks:
                     task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                await self._stop_video()
+                self._ws = None
 
     async def _telemetry_loop(self) -> None:
         """Loop de envio de telemetria (GPS + hardware + Starlink)."""
@@ -166,66 +180,46 @@ class FieldAgent:
             except Exception:
                 pass
 
-    async def _start_video(self) -> None:
-        """Inicializa encoder e bonding (se habilitado)."""
-        try:
-            from ratonet.field.encoder import SRTEncoder
+    async def _start_video(self, config: dict) -> None:
+        """Starts video only after the server has reserved the authenticated input."""
+        from ratonet.field.encoder import SRTEncoder
+        from ratonet.field.bonding import SRTLASender
 
-            server_host = self.server_url.replace("ws://", "").replace("wss://", "").split(":")[0]
+        if not config:
+            raise RuntimeError("Servidor não disponibilizou entrada de vídeo")
+        host = urlsplit(self.server_url).hostname
+        url_host = f"[{host}]" if ":" in host else host
+        output = f"srt://{url_host}:{config['port']}?mode=caller"
+        if config["transport"] == "srtla":
+            self._bonding = SRTLASender(
+                settings.srtla.send_port, host, config["port"],
+                settings.field.network_interfaces, settings.srtla.binary_path)
+            if not await self._bonding.start():
+                raise RuntimeError("Não foi possível iniciar srtla_send")
+            output = self._bonding.get_primary_srt_url()
+        self._encoder = SRTEncoder(
+            device=settings.field.video_device, bitrate=settings.field.video_bitrate,
+            resolution=settings.field.video_resolution, codec=settings.field.video_codec,
+            srt_url=output, latency_ms=config["latency_ms"], passphrase=config["passphrase"])
+        await self._encoder.start()
 
-            if settings.srtla.enabled:
-                from ratonet.field.bonding import SRTLASender
-                sender = SRTLASender(
-                    listen_port=settings.srtla.send_port,
-                    server_host=server_host,
-                    server_port=settings.srtla.rec_port,
-                    interfaces=settings.field.network_interfaces or None,
-                    binary_path=settings.srtla.binary_path,
-                )
-                started = await sender.start()
-                if started:
-                    self._bonding = sender
-                    log.info("SRTLA bonding ativo")
-                else:
-                    log.warning("SRTLA fallback → bonding naive")
-                    from ratonet.field.bonding import NetworkBonding
-                    self._bonding = NetworkBonding(
-                        streamer_id=self.streamer_id,
-                        server_host=server_host,
-                        base_port=settings.srt.base_port,
-                    )
-            else:
-                from ratonet.field.bonding import NetworkBonding
-                self._bonding = NetworkBonding(
-                    streamer_id=self.streamer_id,
-                    server_host=server_host,
-                    base_port=settings.srt.base_port,
-                )
-
-            self._encoder = SRTEncoder(
-                device=settings.field.video_device,
-                bitrate=settings.field.video_bitrate,
-                resolution=settings.field.video_resolution,
-                codec=settings.field.video_codec,
-                bonding=self._bonding,
-            )
-
-            await self._encoder.start()
-            log.info("Video pipeline iniciado")
-        except ImportError as e:
-            log.warning("Módulos de vídeo não disponíveis: %s", e)
-        except Exception as e:
-            log.error("Erro ao iniciar vídeo: %s", e)
+    async def _stop_video(self) -> None:
+        if self._encoder:
+            await self._encoder.stop()
+            self._encoder = None
+        if self._bonding:
+            await self._bonding.stop()
+            self._bonding = None
 
 
 def main() -> None:
     """Entry point CLI."""
     parser = argparse.ArgumentParser(description="RatoNet Field Agent")
     parser.add_argument(
-        "--id", required=True, help="ID do streamer (UUID recebido no cadastro)"
+        "--id", default=settings.field.streamer_id, help="ID do streamer (ou FIELD_STREAMER_ID)"
     )
     parser.add_argument(
-        "--key", required=True, help="API key do streamer (recebida no cadastro)"
+        "--key", default=settings.field.api_key, help="API key do streamer (ou FIELD_API_KEY)"
     )
     parser.add_argument(
         "--server", default=settings.field.server_ws_url,
@@ -240,6 +234,8 @@ def main() -> None:
         help="Habilitar pipeline de vídeo (FFmpeg + SRT)",
     )
     args = parser.parse_args()
+    if not args.id or not args.key:
+        parser.error("Informe --id e --key ou FIELD_STREAMER_ID e FIELD_API_KEY no .env")
 
     agent = FieldAgent(
         streamer_id=args.id,
